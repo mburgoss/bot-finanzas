@@ -1,0 +1,44 @@
+name: Bot Finanzas
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"    # cada 5 minutos (mínimo que acepta GitHub; puede atrasarse)
+  workflow_dispatch:          # permite ejecutarlo a mano desde la pestaña Actions
+
+# El token automático no necesita escribir nada (mínimo privilegio).
+permissions:
+  contents: read
+
+# Evita que dos corridas se pisen si una se demora.
+concurrency:
+  group: bot-finanzas
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      - name: Ejecutar bot
+        env:
+          GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          BANK_SENDERS: ${{ secrets.BANK_SENDERS }}
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
+          SHEET_ID: ${{ secrets.SHEET_ID }}
+          BILLING_DAY: ${{ secrets.BILLING_DAY }}
+          CARD_MAP: ${{ secrets.CARD_MAP }}
+          DEST_ACCOUNT: ${{ secrets.DEST_ACCOUNT }}
+        run: python -m src.main

@@ -1,0 +1,66 @@
+"""Configuración central del bot. Todo lo sensible viene de variables de entorno
+(GitHub Secrets). Nada de credenciales hardcodeadas en el repo."""
+
+import os
+import re
+
+# --- Gmail (IMAP) ---
+GMAIL_USER = os.environ["GMAIL_USER"]              # tu correo, ej: tucorreo@gmail.com
+GMAIL_APP_PASSWORD = os.environ["GMAIL_APP_PASSWORD"]  # App Password de 16 dígitos
+IMAP_HOST = "imap.gmail.com"
+
+# Remitentes del banco a vigilar (en minúsculas). Ajustar según tu banco.
+# Ej: "avisos@tubanco.cl", "notificaciones@tubanco.cl"
+BANK_SENDERS = [s.strip().lower() for s in os.environ.get("BANK_SENDERS", "").split(",") if s.strip()]
+
+# Cuántos días hacia atrás mirar como máximo (por si el bot estuvo caído).
+LOOKBACK_DAYS = int(os.environ.get("LOOKBACK_DAYS", "3"))
+
+# Tu número de cuenta (solo dígitos). Un correo que NO viene de un remitente
+# conocido solo se procesa si contiene este número (así una transferencia real
+# a tu cuenta entra, y correos ajenos se ignoran). Ej: 001234567890
+DEST_ACCOUNT = re.sub(r"\D", "", os.environ.get("DEST_ACCOUNT", ""))
+
+# --- Telegram ---
+TELEGRAM_TOKEN = os.environ["TELEGRAM_TOKEN"]
+TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
+
+# --- Google Sheets ---
+# El JSON de la cuenta de servicio va en el secret GOOGLE_CREDENTIALS (texto completo).
+GOOGLE_CREDENTIALS_JSON = os.environ["GOOGLE_CREDENTIALS"]
+SHEET_ID = os.environ["SHEET_ID"]  # el id de la planilla (de la URL)
+
+# --- Reglas de negocio ---
+# Día en que se factura la tarjeta de crédito.
+BILLING_DAY = int(os.environ.get("BILLING_DAY", "22"))
+
+# Mapeo de últimos 4 dígitos -> tipo de tarjeta. Ej: "1234:credito,5678:debito"
+# Si un cobro no matchea, se usa lo que diga el propio correo (crédito/débito).
+CARD_MAP = {}
+for pair in os.environ.get("CARD_MAP", "").split(","):
+    if ":" in pair:
+        digits, tipo = pair.split(":")
+        CARD_MAP[digits.strip()] = tipo.strip().lower()
+
+# Zona horaria para fechas (Chile).
+TIMEZONE = os.environ.get("TIMEZONE", "America/Santiago")
+
+# Hora local (0-23) del resumen nocturno automático por Telegram.
+RESUMEN_HORA = int(os.environ.get("RESUMEN_HORA", "22"))
+
+# --- Categorías de gasto ---
+# Lista fija (editable). El orden define los botones de Telegram. Se pueden
+# agregar más en caliente con "➕ Otra": esas quedan guardadas en la hoja Config
+# (clave 'categorias_extra') y aparecen como botones a partir de ahí.
+CATEGORIAS = [
+    ("🛒", "Alimentación"),
+    ("🍔", "Restaurantes"),
+    ("🚗", "Transporte"),
+    ("🏠", "Hogar y servicios"),
+    ("🎮", "Ocio"),
+    ("👕", "Compras"),
+    ("💊", "Salud"),
+    ("📚", "Educación"),
+    ("💸", "Otros"),
+]
+SIN_CATEGORIA = "Sin categoría"
