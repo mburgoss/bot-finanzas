@@ -89,6 +89,11 @@ comparar ciclos día a día. Se envía una sola vez por día. La hora se ajusta 
 opcional `RESUMEN_HORA` (0–23) y el tema del gráfico con `GRAFICO_TEMA`
 (`claro` u `oscuro`; se define en el propio workflow, no es un secret).
 
+**Para verlo sin esperar a la noche:** pestaña **Actions** → "Bot Finanzas" →
+**Run workflow**, y marcá **`forzar_resumen`** (ahí mismo podés elegir el `tema`
+para comparar claro vs oscuro). El resumen sale al toque y **no** cuenta como el
+de la noche: el de las 22:00 igual va a llegar a su hora.
+
 Si el gráfico no se puede generar (falta `matplotlib`, Telegram rechaza la imagen), el
 resumen igual sale en texto con las barras ASCII de siempre — nunca se pierde.
 

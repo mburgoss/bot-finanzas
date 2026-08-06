@@ -605,16 +605,23 @@ def _resumen_nocturno(store, hoy: date):
 
 
 def _quizas_resumen_nocturno(store):
-    """Envía el resumen una vez al día, a partir de RESUMEN_HORA (hora local)."""
+    """Envía el resumen una vez al día, a partir de RESUMEN_HORA (hora local).
+
+    Con FORZAR_RESUMEN (input 'forzar_resumen' del workflow) sale igual, sin
+    importar la hora, y sin marcar el día como enviado: es una vista previa, así
+    que el resumen real de la noche igual va a salir a su hora."""
     ahora = _ahora_local()
-    if ahora.hour < config.RESUMEN_HORA:
-        return
     hoy_iso = ahora.date().isoformat()
-    if store.get_config("ultimo_resumen") == hoy_iso:
-        return  # ya se envió hoy
+    forzado = config.FORZAR_RESUMEN
+    if not forzado:
+        if ahora.hour < config.RESUMEN_HORA:
+            return
+        if store.get_config("ultimo_resumen") == hoy_iso:
+            return  # ya se envió hoy
     try:
         _resumen_nocturno(store, ahora.date())
-        store.set_config("ultimo_resumen", hoy_iso)
+        if not forzado:
+            store.set_config("ultimo_resumen", hoy_iso)
     except Exception as e:
         print(f"[aviso] resumen nocturno: {e}")
 
