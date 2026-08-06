@@ -15,6 +15,7 @@ tipo ∈ {"credito", "debito", "transferencia", "ingreso"}.
 
 import html
 import re
+import unicodedata
 from dataclasses import dataclass
 from datetime import date, datetime
 
@@ -72,6 +73,13 @@ def _limpiar_texto(cuerpo: str) -> str:
     return re.sub(r"\s+", " ", texto).strip()    # normaliza espacios
 
 
+def _sin_acentos(texto: str) -> str:
+    """'realizó' -> 'realizo'. Los bancos escriben la misma frase con y sin
+    tilde según la plantilla, y una frase clave no puede depender de eso."""
+    return "".join(c for c in unicodedata.normalize("NFD", texto)
+                   if unicodedata.category(c) != "Mn")
+
+
 # --- Patrón de COMPRA con TARJETA ---
 RE_COMPRA = re.compile(
     r"se\s*ha\s*realizado\s*una\s*compra\s*por\s*\$?(?P<monto>[\d.]+)\s*"
@@ -112,15 +120,39 @@ INGRESO_BANCOS = [
         "de": re.compile(r"cliente\s+(?P<de>.+?)\s+ha\s+instruido", re.IGNORECASE | re.DOTALL),
         "fecha": re.compile(r"Fecha\s+(?P<fecha>\d{1,2}-\d{1,2}-\d{4})", re.IGNORECASE),
     },
+    {
+        # Santander, formato "Comprobante Transferencia de fondos" (2026): dejó
+        # de decir "ha instruido" y pasó a "realizó una transferencia a tu cuenta".
+        "nombre": "santander_comprobante",
+        "monto": re.compile(r"Monto\s*transferido\s*\$?\s*(?P<monto>[\d.]+)", re.IGNORECASE),
+        "de": re.compile(r"cliente\s+(?P<de>.+?)\s+realiz", re.IGNORECASE | re.DOTALL),
+        "fecha": re.compile(r"con\s*fecha\s*(?P<fecha>\d{1,2}/\d{1,2}/\d{4})", re.IGNORECASE),
+    },
+    {
+        # Tenpo, "Comprobante de transferencia exitosa". Ojo: su plantilla rotula
+        # "Nombre del destinatario" a QUIEN ENVÍA, así que el nombre se saca de
+        # "La transferencia de X por $N a tu cuenta".
+        "nombre": "tenpo",
+        "monto": re.compile(r"Monto\s*transferencia\s*:?\s*\$?\s*(?P<monto>[\d.]+)", re.IGNORECASE),
+        "de": re.compile(r"transferencia\s+de\s+(?P<de>.+?)\s+por\s+\$", re.IGNORECASE | re.DOTALL),
+        "fecha": re.compile(r"Fecha\s*:?\s*(?P<fecha>\d{1,2}-\d{1,2}-\d{4})", re.IGNORECASE),
+    },
 ]
 
 # Frases que indican FUERTEMENTE que es un ingreso (transferencia recibida).
 # Deben ser específicas para no confundirse con estados de cuenta u otros correos.
+# Se comparan contra el texto en minúsculas y SIN TILDES (ver _sin_acentos), así
+# que van escritas sin tildes a propósito.
 _CLAVES_INGRESO = (
     "transferencia de fondos recibida", "fondos recibida", "transferencia recibida",
     "recibiste una transferencia", "te ha transferido", "te transfiri",
     "transferencia a tu favor", "transferencia a su favor", "abono por transferencia",
     "ha instruido una transferencia de fondos a su cuenta",  # formato de otro banco
+    # Formatos que rompieron la detección en agosto 2026 (ver corridas fallidas):
+    "realizo una transferencia a tu cuenta",   # Santander "Comprobante"
+    "realizo una transferencia a su cuenta",
+    "a tu cuenta fue exitosa",                 # Tenpo "Comprobante de transferencia"
+    "a su cuenta fue exitosa",
 )
 
 # Correos que NUNCA son un ingreso (aunque mencionen "abono", "cuenta", etc.).
@@ -140,12 +172,46 @@ RE_NOMBRE_GENERICO = [
 ]
 
 
+def _normalizado(asunto: str, cuerpo: str) -> str:
+    return _sin_acentos((asunto + " " + _limpiar_texto(cuerpo)).lower())
+
+
 def parece_ingreso(asunto: str, cuerpo: str) -> bool:
     """True si el correo parece una transferencia recibida (dinero que entra)."""
-    bajo = (asunto + " " + _limpiar_texto(cuerpo)).lower()
+    bajo = _normalizado(asunto, cuerpo)
     if any(x in bajo for x in _EXCLUIR_INGRESO):   # estados de cuenta, envíos, etc.
         return False
     return any(clave in bajo for clave in _CLAVES_INGRESO)
+
+
+# Palabras que delatan que un correo mueve plata, aunque no sepamos leer su
+# formato exacto.
+_SENIALES_MOVIMIENTO = ("transferencia", "transferido", "transfirio", "abono",
+                        "compra", "cargo", "giro", "pago")
+
+# Exclusiones propias, MÁS ANGOSTAS que las de ingreso: acá "compra con tarjeta"
+# y "transferencia a terceros" sí son movimientos que queremos ver. Solo se
+# descarta lo que agrupa muchos movimientos o no es ninguno.
+_EXCLUIR_MOVIMIENTO = ("estado de cuenta", "cartola", "resumen mensual",
+                       "resumen de cuenta", "resumen de tu tarjeta")
+
+
+def parece_movimiento(asunto: str, cuerpo: str) -> bool:
+    """True si el correo parece mover plata: trae un monto en pesos y habla de
+    una operación, y no es un estado de cuenta ni publicidad.
+
+    Es a propósito más amplia que `parece_ingreso`: sirve de red de seguridad
+    para avisar de correos que NO supimos parsear. La red no puede depender de
+    `parece_ingreso`, porque cuando esa falla (un banco cambia la redacción) la
+    red fallaría con ella y el movimiento se pierde en silencio — que es
+    exactamente lo que pasó con Santander y Tenpo en agosto 2026.
+    """
+    bajo = _normalizado(asunto, cuerpo)
+    if any(x in bajo for x in _EXCLUIR_MOVIMIENTO):
+        return False
+    if not RE_MONTO_GENERICO.search(bajo):
+        return False
+    return any(s in bajo for s in _SENIALES_MOVIMIENTO)
 
 
 def _parsear_compra(asunto: str, texto: str, uid: str) -> Movimiento | None:

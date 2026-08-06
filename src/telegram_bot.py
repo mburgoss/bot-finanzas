@@ -12,7 +12,13 @@ from . import config
 API = f"https://api.telegram.org/bot{config.TELEGRAM_TOKEN}"
 
 
-def enviar(texto: str, teclado: dict | None = None, parse_mode: str = "HTML") -> None:
+def enviar(texto: str, teclado: dict | None = None, parse_mode: str = "HTML") -> bool:
+    """Manda un mensaje. Devuelve False si Telegram lo rechazó.
+
+    El resultado se revisa a propósito: antes se ignoraba, así que un mensaje
+    rechazado (por ejemplo, un nombre de comercio con '<' que rompe el parseo
+    HTML) desaparecía sin dejar rastro, con el movimiento ya guardado en la
+    planilla y marcado como visto. El aviso queda en el log de Actions."""
     payload = {
         "chat_id": config.TELEGRAM_CHAT_ID,
         "text": texto,
@@ -21,7 +27,17 @@ def enviar(texto: str, teclado: dict | None = None, parse_mode: str = "HTML") ->
     }
     if teclado is not None:
         payload["reply_markup"] = teclado
-    requests.post(f"{API}/sendMessage", json=payload, timeout=30)
+    resp = requests.post(f"{API}/sendMessage", json=payload, timeout=30)
+    try:
+        data = resp.json()
+    except ValueError:
+        print(f"[aviso] Telegram respondió algo ilegible (HTTP {resp.status_code})")
+        return False
+    if not data.get("ok"):
+        # description trae el motivo de Telegram, no datos del movimiento.
+        print(f"[aviso] Telegram rechazó el mensaje: {data.get('description')!r}")
+        return False
+    return True
 
 
 def enviar_foto(imagen: bytes, caption: str = "", parse_mode: str = "HTML") -> bool:

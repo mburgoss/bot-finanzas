@@ -11,6 +11,7 @@ Flujo:
 import re
 import time
 from datetime import date, datetime, timedelta
+from html import escape as _esc
 
 import gspread
 import requests
@@ -22,7 +23,7 @@ from .formato import delta_pct as _delta_pct
 from .formato import mes_corto as _mes_corto
 from .formato import nombre_ciclo as _nombre_ciclo
 from .formato import pesos as _pesos
-from .parser import Movimiento, parsear, parece_ingreso
+from .parser import Movimiento, parsear, parece_movimiento
 from .sheets import Store
 
 
@@ -79,18 +80,21 @@ def _render_movimiento(store, reg):
     # (evita que movimientos viejos muestren el mes calendario stale).
     ciclo = reg["ciclo_inicio"] if reg["tipo"] == "credito" else billing.ciclo_de_compra(fecha)
 
+    # Todo lo que viene del correo (comercio, nombres) se escapa: un '&' o un '<'
+    # en un nombre de comercio rompe el parseo HTML de Telegram y el mensaje se
+    # descarta entero.
     if tipo == "ingreso":
         cabecera = "<b>Ingreso recibido</b>"
-        detalle = f"De: {comercio.replace('Transferencia de ', '')}"
+        detalle = f"De: {_esc(comercio.replace('Transferencia de ', ''))}"
     elif tipo == "transferencia":
         cabecera = "<b>Transferencia enviada</b>"
-        detalle = f"A: {comercio.replace('Transferencia a ', '')}"
+        detalle = f"A: {_esc(comercio.replace('Transferencia a ', ''))}"
     elif tipo == "credito":
         cabecera = "<b>Compra con crédito</b>"
-        detalle = f"{comercio}   (****{reg.get('digitos', '')})"
+        detalle = f"{_esc(comercio)}   (****{_esc(str(reg.get('digitos', '')))})"
     else:
         cabecera = "<b>Compra con débito</b>"
-        detalle = f"{comercio}   (****{reg.get('digitos', '')})"
+        detalle = f"{_esc(comercio)}   (****{_esc(str(reg.get('digitos', '')))})"
 
     # Se categoriza todo lo que cuenta (gastos e ingresos), para que la suma por
     # categoría cuadre con el total del mes. Solo 'revisar' queda afuera.
@@ -107,7 +111,7 @@ def _render_movimiento(store, reg):
         lineas.append(f"Cuotas: <b>{int(reg.get('num_cuotas') or 1)}</b>")
     if categorizable:
         cat = (reg.get("categoria") or "").strip()
-        lineas.append(f"Categoría: <b>{cat}</b>" if cat
+        lineas.append(f"Categoría: <b>{_esc(cat)}</b>" if cat
                       else "Categoría: <i>sin asignar — elegí abajo</i>")
     lineas.append("")
     lineas.append(_bloque_totales(store, ciclo))
@@ -185,7 +189,7 @@ def _resolver_pendiente(store, mov_id: int, tipo_p: str, texto: str) -> bool:
     if tipo_p == "cat":
         nombre = store.agregar_categoria(texto)
         store.set_categoria(mov_id, nombre)
-        telegram_bot.enviar(f"<code>{mov_id}</code> quedó en <b>{nombre}</b>.")
+        telegram_bot.enviar(f"<code>{mov_id}</code> quedó en <b>{_esc(nombre)}</b>.")
         return True
     if tipo_p == "cuo":
         m = re.search(r"\d+", texto)
@@ -230,7 +234,7 @@ def _manejar_update(store, up) -> bool:
         reg = store.actualizar_cuotas(mov_id, n)
         if reg:
             telegram_bot.enviar(
-                f"<code>{mov_id}</code> {reg['comercio']}: <b>{n} cuotas</b> "
+                f"<code>{mov_id}</code> {_esc(reg['comercio'])}: <b>{n} cuotas</b> "
                 f"de {_pesos(reg['valor_cuota'])} c/u.\n\n"
                 f"{_bloque_totales(store, reg['ciclo_inicio'])}"
             )
@@ -248,7 +252,7 @@ def _manejar_update(store, up) -> bool:
             if reg and "_devuelto" in reg:
                 telegram_bot.enviar(
                     f"Devolución de {_pesos(monto_dev)} en <code>{mov_id}</code> "
-                    f"({reg['comercio']}). Queda en {_pesos(reg['monto'])}.\n\n"
+                    f"({_esc(reg['comercio'])}). Queda en {_pesos(reg['monto'])}.\n\n"
                     f"{_bloque_totales(store, reg['ciclo_inicio'])}"
                 )
                 return True
@@ -256,7 +260,7 @@ def _manejar_update(store, up) -> bool:
             reg = store.eliminar_movimiento(mov_id)
         if reg:
             telegram_bot.enviar(
-                f"Anulado <code>{mov_id}</code> ({reg['comercio']}, "
+                f"Anulado <code>{mov_id}</code> ({_esc(reg['comercio'])}, "
                 f"{_pesos(reg['monto'])}). Ya no cuenta.\n"
                 f"¿Fue un error? Recupéralo con <code>/restaurar {mov_id}</code>\n\n"
                 f"{_bloque_totales(store, reg['ciclo_inicio'])}"
@@ -272,7 +276,7 @@ def _manejar_update(store, up) -> bool:
         reg = store.restaurar_movimiento(mov_id)
         if reg:
             telegram_bot.enviar(
-                f"Restaurado <code>{mov_id}</code> ({reg['comercio']}, "
+                f"Restaurado <code>{mov_id}</code> ({_esc(reg['comercio'])}, "
                 f"{_pesos(reg['monto'])}). Vuelve a contar.\n\n"
                 f"{_bloque_totales(store, reg['ciclo_inicio'])}"
             )
@@ -318,7 +322,7 @@ def _manejar_update(store, up) -> bool:
             w_tot = max(len("Total"), *(len(_pesos(i[1])) for i in items))
             lineas = [f"{'Categoría':<{w_cat}} {'Total':>{w_tot}}"]
             for cat, m2 in items:
-                lineas.append(f"{cat:<{w_cat}} {_pesos(m2):>{w_tot}}")
+                lineas.append(f"{_esc(f'{cat:<{w_cat}}')} {_pesos(m2):>{w_tot}}")
             total = sum(m2 for _, m2 in items)
             lineas.append(f"{'TOTAL':<{w_cat}} {_pesos(total):>{w_tot}}")
             tabla = "<pre>" + "\n".join(lineas) + "</pre>"
@@ -400,18 +404,32 @@ def _de_remitente_conocido(remitente: str) -> bool:
 
 
 def _contiene_cuenta(cuerpo: str) -> bool:
-    """True si el cuerpo contiene TU número de cuenta (solo dígitos)."""
+    """True si el cuerpo contiene TU número de cuenta (solo dígitos).
+
+    Se prueba con y sin los ceros de la izquierda: el mismo número aparece como
+    '0-080-05-79300-5' en un banco y como '8005793005' en otro, y con una sola
+    forma el correo del segundo se descartaba antes de llegar al parser."""
     if not config.DEST_ACCOUNT:
         return False
     digitos = re.sub(r"\D", "", re.sub(r"<[^>]+>", " ", cuerpo))
-    return config.DEST_ACCOUNT in digitos
+    if config.DEST_ACCOUNT in digitos:
+        return True
+    sin_ceros = config.DEST_ACCOUNT.lstrip("0")
+    # Menos de 8 dígitos es demasiado corto: daría falsos positivos con montos.
+    return len(sin_ceros) >= 8 and sin_ceros in digitos
 
 
 def procesar_correos(store: Store):
     vistos = store.message_ids()
     nuevos = 0
+    # Contadores de diagnóstico: sin esto, un correo que el parser no entiende
+    # se descarta sin dejar rastro y no hay forma de saber dónde se perdió.
+    # Van como números a propósito: el repo es público y los logs también.
+    stats = {"total": 0, "ya_vistos": 0, "ajenos": 0, "sin_parsear": 0}
     for message_id, asunto, remitente, cuerpo in email_reader.obtener_correos():
+        stats["total"] += 1
         if message_id in vistos:
+            stats["ya_vistos"] += 1
             continue
 
         # Filtro clave: si el correo NO es de un remitente conocido y NO contiene
@@ -419,19 +437,27 @@ def procesar_correos(store: Store):
         conocido = _de_remitente_conocido(remitente)
         tiene_cuenta = _contiene_cuenta(cuerpo)
         if not conocido and not tiene_cuenta:
+            stats["ajenos"] += 1
             continue
 
         mov = parsear(asunto, cuerpo, uid=message_id)
         if not mov:
-            # Solo avisamos de "no supe leerlo" si trae TU cuenta y parece ingreso
-            # (así nunca alertamos por estados de cuenta ni correos ajenos).
-            if tiene_cuenta and parece_ingreso(asunto, cuerpo):
+            stats["sin_parsear"] += 1
+            if config.DEBUG_CORREOS:
+                # Solo bajo pedido: el asunto puede traer comercio y monto, y el
+                # log de un repo público lo ve cualquiera.
+                print(f"[debug] no supe leer: remitente={remitente!r} asunto={asunto!r}")
+            # Red de seguridad: avisamos de CUALQUIER correo que mueva plata y no
+            # hayamos sabido leer. Antes esto exigía parece_ingreso(), o sea que
+            # dependía del mismo detector que había fallado — cuando un banco
+            # cambiaba la redacción, el movimiento se perdía sin dejar rastro.
+            if parece_movimiento(asunto, cuerpo):
                 rev = Movimiento(fecha=date.today(), comercio=f"REVISAR: {asunto[:40]}",
                                  monto=0, digitos="", tipo="revisar", uid=message_id)
                 rid = store.agregar_movimiento(rev)
                 telegram_bot.enviar(
-                    f"Recibí un correo que parece un <b>ingreso</b> pero no supe leerlo:\n"
-                    f"\"{asunto}\"\n"
+                    f"Recibí un correo que <b>mueve plata</b> pero no supe leerlo:\n"
+                    f"\"{_esc(asunto)}\"\n"
                     f"Lo dejé como id <code>{rid}</code> (tipo 'revisar') en la planilla "
                     f"para que lo completes, o reenvíame ese correo y agrego su formato."
                 )
@@ -447,6 +473,8 @@ def procesar_correos(store: Store):
         telegram_bot.enviar(texto, teclado)
         vistos.add(message_id)
         nuevos += 1
+    print(f"[correos] revisados={stats['total']} ya_vistos={stats['ya_vistos']} "
+          f"ajenos={stats['ajenos']} sin_parsear={stats['sin_parsear']} nuevos={nuevos}")
     return nuevos
 
 
@@ -471,7 +499,9 @@ def _barras(items, ancho: int = 10):
     for l, v in items:
         n = max(1, round(v / maximo * ancho)) if (maximo > 0 and v > 0) else 0
         barra = ("█" * n).ljust(ancho)
-        filas.append(f"{str(l)[:w_lbl].ljust(w_lbl)} {barra} {_pesos(v):>{w_amt}}")
+        # El relleno se calcula con el texto crudo y se escapa después, para que
+        # una categoría con '&' no rompa el bloque <pre> entero.
+        filas.append(f"{_esc(str(l)[:w_lbl].ljust(w_lbl))} {barra} {_pesos(v):>{w_amt}}")
     return "<pre>" + "\n".join(filas) + "</pre>"
 
 

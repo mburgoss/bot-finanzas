@@ -55,6 +55,11 @@ GRAFICO_TEMA = os.environ.get("GRAFICO_TEMA", "claro").strip().lower()
 # sin marcar el día como enviado. Se activa desde el input del workflow.
 FORZAR_RESUMEN = os.environ.get("FORZAR_RESUMEN", "").strip().lower() in ("1", "true", "yes", "si", "sí")
 
+# Diagnóstico de correos: imprime remitente y asunto de los que no se supieron
+# leer. OJO: el repo es público y los logs de Actions también, así que esto deja
+# datos del banco a la vista. Prender solo mientras se depura, y apagar después.
+DEBUG_CORREOS = os.environ.get("DEBUG_CORREOS", "").strip().lower() in ("1", "true", "yes", "si", "sí")
+
 # --- Categorías de gasto ---
 # Lista fija (editable). El orden define los botones de Telegram. Se pueden
 # agregar más en caliente con "➕ Otra": esas quedan guardadas en la hoja Config
