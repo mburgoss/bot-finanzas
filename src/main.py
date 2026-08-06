@@ -15,20 +15,15 @@ from datetime import date, datetime, timedelta
 import gspread
 import requests
 
+# `grafico` (y con él matplotlib) se importa dentro de _grafico_ritmo, no acá:
+# si falta la dependencia, se pierde el gráfico pero el bot sigue funcionando.
 from . import billing, config, email_reader, telegram_bot
+from .formato import delta_pct as _delta_pct
+from .formato import mes_corto as _mes_corto
+from .formato import nombre_ciclo as _nombre_ciclo
+from .formato import pesos as _pesos
 from .parser import Movimiento, parsear, parece_ingreso
 from .sheets import Store
-
-
-def _pesos(n) -> str:
-    return f"${int(n):,.0f}".replace(",", ".")
-
-
-def _nombre_ciclo(ciclo: str) -> str:
-    meses = ["", "enero", "febrero", "marzo", "abril", "mayo", "junio", "julio",
-             "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
-    anio, mes = ciclo[:4], int(ciclo[5:7])
-    return f"{meses[mes]} {anio}"
 
 
 def _bloque_totales(store, ciclo: str) -> str:
@@ -480,15 +475,45 @@ def _barras(items, ancho: int = 10):
     return "<pre>" + "\n".join(filas) + "</pre>"
 
 
-def _mes_corto(ciclo_lbl: str) -> str:
-    """'agosto 2026' -> 'Agosto' (etiqueta corta para las barras)."""
-    return ciclo_lbl.split()[0].capitalize()
+def _grafico_ritmo(store, ciclos, dias_ciclo: int, transcurridos: int,
+                   proyeccion: int | None):
+    """PNG del gasto acumulado del ciclo vs los anteriores, o None si no se pudo.
+
+    `ciclos` es [(etiqueta, inicio, corte, total)] con el ciclo en curso primero.
+    matplotlib se importa acá adentro a propósito: si falta la dependencia o el
+    dibujo falla, se pierde el gráfico pero el resumen de texto igual sale.
+    """
+    try:
+        from . import grafico
+
+        dias = transcurridos + 1
+        series = []
+        for lbl, ini, corte, total in ciclos:
+            if series and not total:
+                continue    # un ciclo anterior sin movimientos es una línea en cero
+            series.append({
+                "etiqueta": _mes_corto(lbl),
+                "valores": grafico.acumular(store.gasto_diario(ini, corte), ini, dias),
+            })
+        if not any(s["valores"][-1] for s in series):
+            return None     # todavía no hay nada que dibujar
+        return grafico.ritmo_de_gasto(
+            series, dias_ciclo,
+            f"Ciclo {ciclos[0][0]} · día {dias} de {dias_ciclo}",
+            proyeccion=proyeccion, tema=config.GRAFICO_TEMA)
+    except Exception as e:
+        print(f"[aviso] no pude generar el gráfico del resumen: {e}")
+        return None
 
 
 def _resumen_nocturno(store, hoy: date):
-    """Arma y envía el resumen del día: gasto del ciclo vs los DOS ciclos
-    anteriores a la misma altura, categorías que más crecieron, barras de texto
-    por categoría y una proyección vs el promedio."""
+    """Arma y envía el resumen del día: un gráfico del gasto acumulado del ciclo
+    contra los DOS ciclos anteriores a la misma altura, más las categorías que
+    más crecieron y una proyección vs el promedio.
+
+    El gráfico va como foto y el texto como caption. Si el gráfico no se pudo
+    generar o Telegram lo rechaza, cae al resumen de solo texto con las barras
+    ASCII de siempre — el resumen nunca se pierde por un problema de imagen."""
     ini_act = billing.inicio_de_ciclo(hoy)
     prox = billing.proximo_inicio_de_ciclo(hoy)
     dias_ciclo = (prox - ini_act).days
@@ -496,8 +521,11 @@ def _resumen_nocturno(store, hoy: date):
 
     ini_ant1 = billing.inicio_de_ciclo(ini_act - timedelta(days=1))
     ini_ant2 = billing.inicio_de_ciclo(ini_ant1 - timedelta(days=1))
-    corte_ant1 = ini_ant1 + timedelta(days=transcurridos)      # misma altura
-    corte_ant2 = ini_ant2 + timedelta(days=transcurridos)
+    # Misma altura del ciclo, sin pasarse: un ciclo anterior puede ser más corto
+    # que el actual (28 vs 31 días), y sin el tope la ventana se metería en el
+    # ciclo siguiente y contaría movimientos que no le corresponden.
+    corte_ant1 = min(ini_ant1 + timedelta(days=transcurridos), ini_act - timedelta(days=1))
+    corte_ant2 = min(ini_ant2 + timedelta(days=transcurridos), ini_ant1 - timedelta(days=1))
 
     total_act, cat_act = store.gasto_neto_por_fecha(ini_act, hoy)
     total_ant1, cat_ant1 = store.gasto_neto_por_fecha(ini_ant1, corte_ant1)
@@ -507,28 +535,42 @@ def _resumen_nocturno(store, hoy: date):
     lbl_ant1 = _nombre_ciclo(billing.ciclo_de_compra(ini_ant1))
     lbl_ant2 = _nombre_ciclo(billing.ciclo_de_compra(ini_ant2))
 
+    promedio = store.promedio_ciclos(ini_act, n=3)
+    # Proyección de cierre: recién desde el 4º día. Con uno o dos días de datos
+    # el ×31 dispara la escala del gráfico y no dice nada del mes.
+    proyeccion = (total_act * dias_ciclo // (transcurridos + 1)
+                  if total_act > 0 and 3 <= transcurridos < dias_ciclo - 1 else None)
+
+    png = _grafico_ritmo(store,
+                         [(ciclo_lbl, ini_act, hoy, total_act),
+                          (lbl_ant1, ini_ant1, corte_ant1, total_ant1),
+                          (lbl_ant2, ini_ant2, corte_ant2, total_ant2)],
+                         dias_ciclo, transcurridos, proyeccion)
+
     lineas = [f"<b>Resumen del día · {hoy.strftime('%d/%m/%Y')}</b>", ""]
     lineas.append(f"<b>Ciclo {ciclo_lbl}</b> · día {transcurridos + 1} de {dias_ciclo}")
     lineas.append(f"Gastado hasta hoy: <b>{_pesos(total_act)}</b>")
 
-    # 1) Comparación con los dos ciclos anteriores a la misma altura -> BARRAS
-    #    (los montos van solo acá; el texto no los repite).
-    comp = [(_mes_corto(ciclo_lbl), total_act),
-            (_mes_corto(lbl_ant1), total_ant1),
-            (_mes_corto(lbl_ant2), total_ant2)]
-    barras_comp = _barras(comp)
-    if barras_comp:
-        lineas.append("")
-        lineas.append("<b>Comparación a esta altura</b>")
-        lineas.append(barras_comp)
-        # Porcentajes: dato que las barras no muestran.
-        partes = []
-        if total_ant1:
-            partes.append(f"{(total_act - total_ant1) * 100 // total_ant1:+d}% vs {_mes_corto(lbl_ant1)}")
-        if total_ant2:
-            partes.append(f"{(total_act - total_ant2) * 100 // total_ant2:+d}% vs {_mes_corto(lbl_ant2)}")
-        if partes:
-            lineas.append(" · ".join(partes))
+    # 1) Comparación con los dos ciclos anteriores a la misma altura.
+    #    Si hay gráfico, él muestra las curvas y acá van solo los porcentajes;
+    #    si no, las barras de texto siguen contando la comparación.
+    partes = []
+    if total_ant1:
+        partes.append(f"{_delta_pct(total_act, total_ant1):+d}% vs {_mes_corto(lbl_ant1)}")
+    if total_ant2:
+        partes.append(f"{_delta_pct(total_act, total_ant2):+d}% vs {_mes_corto(lbl_ant2)}")
+
+    if png is None:
+        comp = [(_mes_corto(ciclo_lbl), total_act),
+                (_mes_corto(lbl_ant1), total_ant1),
+                (_mes_corto(lbl_ant2), total_ant2)]
+        barras_comp = _barras(comp)
+        if barras_comp:
+            lineas.append("")
+            lineas.append("<b>Comparación a esta altura</b>")
+            lineas.append(barras_comp)
+    if partes:
+        lineas.append(" · ".join(partes) + " (a esta altura del ciclo)")
 
     # 2) Drivers: categorías que más crecieron vs el ciclo anterior -> BARRAS
     #    (a nivel categoría, no repite la comparación de ciclos).
@@ -543,16 +585,23 @@ def _resumen_nocturno(store, hoy: date):
         lineas.append(barras_top)
 
     # 3) Proyección del ciclo vs promedio.
-    promedio = store.promedio_ciclos(ini_act, n=3)
-    if promedio and transcurridos + 1 < dias_ciclo:
-        proyeccion = total_act * dias_ciclo // (transcurridos + 1)
+    if promedio and proyeccion:
         estado = "por encima del promedio" if proyeccion > promedio else "dentro del promedio"
         lineas.append("")
         lineas.append(f"<b>Proyección de cierre:</b> {_pesos(proyeccion)}")
         lineas.append(f"<b>Promedio de ciclos:</b> {_pesos(promedio)}")
         lineas.append(f"Estado: {estado}")
 
-    telegram_bot.enviar("\n".join(lineas))
+    texto = "\n".join(lineas)
+    if png is None:
+        telegram_bot.enviar(texto)
+        return
+    # El caption de Telegram admite 1024 caracteres; si no entra, el texto va aparte.
+    caption = texto if len(texto) <= 1000 else ""
+    if not telegram_bot.enviar_foto(png, caption):
+        telegram_bot.enviar(texto)      # Telegram rechazó la foto: al menos el texto
+    elif not caption:
+        telegram_bot.enviar(texto)
 
 
 def _quizas_resumen_nocturno(store):

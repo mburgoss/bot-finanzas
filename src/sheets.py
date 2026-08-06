@@ -502,11 +502,10 @@ class Store:
         return data
 
     # --- Ritmo de gasto (por fecha de compra, para el resumen nocturno) ---
-    def gasto_neto_por_fecha(self, desde: date, hasta: date) -> tuple[int, dict]:
-        """Suma neta y desglose por categoría de los movimientos cuya FECHA está
-        en [desde, hasta]. Cuenta el monto completo en la fecha (gastos suman,
-        ingresos restan). Sirve para comparar el ritmo de gasto entre ciclos."""
-        total, por_cat = 0, {}
+    def _netos_en(self, desde: date, hasta: date):
+        """Itera (fecha, neto, categoría) de los movimientos vigentes cuya FECHA
+        cae en [desde, hasta]. Cuenta el monto completo en la fecha: los gastos
+        suman y los ingresos restan."""
         for reg in self._registros():
             if str(reg.get("estado") or "").lower() == "anulado":
                 continue
@@ -517,10 +516,26 @@ class Store:
             if not (desde <= f <= hasta):
                 continue
             neto = -abs(_num(reg.get("monto"))) if tipo == "ingreso" else abs(_num(reg.get("monto")))
-            total += neto
             cat = str(reg.get("categoria") or "").strip() or config.SIN_CATEGORIA
+            yield f, neto, cat
+
+    def gasto_neto_por_fecha(self, desde: date, hasta: date) -> tuple[int, dict]:
+        """Suma neta y desglose por categoría del período. Sirve para comparar el
+        ritmo de gasto entre ciclos."""
+        total, por_cat = 0, {}
+        for _f, neto, cat in self._netos_en(desde, hasta):
+            total += neto
             por_cat[cat] = por_cat.get(cat, 0) + neto
         return total, por_cat
+
+    def gasto_diario(self, desde: date, hasta: date) -> dict:
+        """Gasto neto día a día {fecha: neto}, para la curva acumulada del
+        gráfico. Solo trae los días con movimiento; los huecos los rellena
+        `grafico.acumular`."""
+        por_dia = {}
+        for f, neto, _cat in self._netos_en(desde, hasta):
+            por_dia[f] = por_dia.get(f, 0) + neto
+        return por_dia
 
     def promedio_ciclos(self, inicio_actual: date, n: int = 3) -> int:
         """Promedio del gasto neto de los últimos `n` ciclos completos anteriores

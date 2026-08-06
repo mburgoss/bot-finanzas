@@ -24,6 +24,28 @@ def enviar(texto: str, teclado: dict | None = None, parse_mode: str = "HTML") ->
     requests.post(f"{API}/sendMessage", json=payload, timeout=30)
 
 
+def enviar_foto(imagen: bytes, caption: str = "", parse_mode: str = "HTML") -> bool:
+    """Manda un PNG (sendPhoto). Devuelve False si Telegram lo rechazó, para que
+    quien llama pueda caer al mensaje de texto en vez de quedarse sin resumen.
+
+    El caption admite 1024 caracteres: recortar es tarea de quien llama, acá solo
+    se trunca como red de seguridad."""
+    resp = requests.post(
+        f"{API}/sendPhoto",
+        data={
+            "chat_id": config.TELEGRAM_CHAT_ID,
+            "caption": caption[:1024],
+            "parse_mode": parse_mode,
+        },
+        files={"photo": ("resumen.png", imagen, "image/png")},
+        timeout=60,
+    )
+    try:
+        return bool(resp.json().get("ok"))
+    except ValueError:
+        return False
+
+
 def editar(chat_id, message_id, texto: str, teclado: dict | None = None,
            parse_mode: str = "HTML") -> None:
     """Edita un mensaje ya enviado (para reflejar la cuota/categoría elegida)."""

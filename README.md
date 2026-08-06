@@ -72,21 +72,25 @@ silencio). Para que quede 100% automático, reenvíame el correo del banco nuevo
 agrego su formato + su remitente al `BANK_SENDERS`.
 
 ### 🌙 Resumen nocturno automático
-Cada noche (por defecto a las **22:00**, hora `TIMEZONE`) el bot te manda un mensaje con:
-- **Cuánto llevás gastado en el ciclo actual** comparado, en un **gráfico de barras de
-  texto**, con **los dos ciclos anteriores a la misma altura** (mismos días
-  transcurridos), más la diferencia en %.
-- Las **categorías que más crecieron** respecto al ciclo pasado, también en un gráfico
-  de barras de texto.
-- Una **proyección**: si seguís a este ritmo, cuánto terminarías gastando, y un aviso
+Cada noche (por defecto a las **22:00**, hora `TIMEZONE`) el bot te manda una **imagen**
+con el texto del resumen debajo:
+- El **gráfico de ritmo de gasto**: el gasto acumulado día a día del ciclo actual contra
+  **los dos ciclos anteriores a la misma altura** (mismos días transcurridos), con el
+  monto y la diferencia en % de cada uno, y la **proyección de cierre** punteada.
+- Las **categorías que más crecieron** respecto al ciclo pasado, en barras de texto.
+- La **proyección**: si seguís a este ritmo, cuánto terminarías gastando, y un aviso
   si vas camino a superar tu **promedio** de los últimos ciclos.
 
-Cada dato aparece una sola vez (comparación de ciclos y drivers por categoría son
-gráficos distintos, no se repiten).
+Cada dato aparece una sola vez (la comparación de ciclos vive en el gráfico y los
+drivers por categoría en las barras de texto, no se repiten).
 
 El ritmo se mide por **fecha de compra** (monto completo el día que compraste), para poder
 comparar ciclos día a día. Se envía una sola vez por día. La hora se ajusta con el secret
-opcional `RESUMEN_HORA` (0–23).
+opcional `RESUMEN_HORA` (0–23) y el tema del gráfico con `GRAFICO_TEMA`
+(`claro` u `oscuro`; se define en el propio workflow, no es un secret).
+
+Si el gráfico no se puede generar (falta `matplotlib`, Telegram rechaza la imagen), el
+resumen igual sale en texto con las barras ASCII de siempre — nunca se pierde.
 
 ### ¿Y si me equivoco? (todo es reversible)
 - **Marqué mal las cuotas:** reenvía `/cuotas <id> <n>` con el número correcto.

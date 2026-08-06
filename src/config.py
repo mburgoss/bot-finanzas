@@ -48,6 +48,9 @@ TIMEZONE = os.environ.get("TIMEZONE", "America/Santiago")
 # Hora local (0-23) del resumen nocturno automático por Telegram.
 RESUMEN_HORA = int(os.environ.get("RESUMEN_HORA", "22"))
 
+# Tema del gráfico del resumen: "claro" u "oscuro" (ver src/grafico.py).
+GRAFICO_TEMA = os.environ.get("GRAFICO_TEMA", "claro").strip().lower()
+
 # --- Categorías de gasto ---
 # Lista fija (editable). El orden define los botones de Telegram. Se pueden
 # agregar más en caliente con "➕ Otra": esas quedan guardadas en la hoja Config

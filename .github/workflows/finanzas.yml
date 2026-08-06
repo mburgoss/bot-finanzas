@@ -31,6 +31,7 @@ jobs:
 
       - name: Ejecutar bot
         env:
+          GRAFICO_TEMA: claro          # tema del gráfico del resumen ("claro" u "oscuro")
           GMAIL_USER: ${{ secrets.GMAIL_USER }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
           BANK_SENDERS: ${{ secrets.BANK_SENDERS }}
