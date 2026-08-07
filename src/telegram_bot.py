@@ -70,40 +70,49 @@ def enviar_foto(imagen: bytes, caption: str = "", parse_mode: str = "HTML") -> d
     return data.get("result")
 
 
+# Motivos por los que el mensaje realmente dejó de existir y corresponde crear
+# otro. Cualquier OTRO error (429, 5xx, red) NO lo justifica: tratarlos a todos
+# igual es lo que terminó dejando dos fotos fijadas en el chat.
+_YA_NO_EXISTE = ("message to edit not found", "message can't be edited",
+                 "message identifier is not specified", "message_id_invalid")
+
+
 def editar_foto(message_id: int, imagen: bytes, caption: str = "",
-                parse_mode: str = "HTML") -> bool:
+                parse_mode: str = "HTML") -> str:
     """Reemplaza la imagen de un mensaje ya enviado (editMessageMedia).
 
     Es lo que sostiene el panel fijado: siempre el MISMO mensaje, con la imagen
     al día. Editar no genera notificación, así que el panel se puede refrescar
     seguido sin molestar.
 
-    Devuelve False si el mensaje ya no existe (lo borraste) o Telegram rechaza
-    la edición; ahí quien llama crea uno nuevo."""
+    Devuelve "ok", "no_existe" (el mensaje se borró: hay que crear otro) o
+    "error" (falla pasajera: NO hay que crear otro, se reintenta después)."""
     media = {
         "type": "photo",
         "media": "attach://foto",
         "caption": caption[:1024],
         "parse_mode": parse_mode,
     }
-    resp = requests.post(
-        f"{API}/editMessageMedia",
-        data={
-            "chat_id": config.TELEGRAM_CHAT_ID,
-            "message_id": message_id,
-            "media": json.dumps(media),
-        },
-        files={"foto": ("panel.png", imagen, "image/png")},
-        timeout=60,
-    )
     try:
+        resp = requests.post(
+            f"{API}/editMessageMedia",
+            data={
+                "chat_id": config.TELEGRAM_CHAT_ID,
+                "message_id": message_id,
+                "media": json.dumps(media),
+            },
+            files={"foto": ("panel.png", imagen, "image/png")},
+            timeout=60,
+        )
         data = resp.json()
-    except ValueError:
-        return False
-    if not data.get("ok"):
-        print(f"[aviso] no pude editar el panel: {data.get('description')!r}")
-        return False
-    return True
+    except (requests.exceptions.RequestException, ValueError) as e:
+        print(f"[aviso] no pude editar el panel ({type(e).__name__})")
+        return "error"
+    if data.get("ok"):
+        return "ok"
+    motivo = str(data.get("description") or "").lower()
+    print(f"[aviso] Telegram rechazó la edición del panel: {motivo!r}")
+    return "no_existe" if any(m in motivo for m in _YA_NO_EXISTE) else "error"
 
 
 def fijar(message_id: int) -> bool:
@@ -121,6 +130,19 @@ def fijar(message_id: int) -> bool:
         return bool(resp.json().get("ok"))
     except ValueError:
         return False
+
+
+def desfijar(message_id: int) -> None:
+    """Saca de fijados un panel viejo antes de fijar el nuevo, para que no se
+    acumulen fotos fijadas. Si falla, no importa: es limpieza, no dato."""
+    try:
+        requests.post(
+            f"{API}/unpinChatMessage",
+            json={"chat_id": config.TELEGRAM_CHAT_ID, "message_id": message_id},
+            timeout=30,
+        )
+    except requests.exceptions.RequestException:
+        pass
 
 
 def editar(chat_id, message_id, texto: str, teclado: dict | None = None,

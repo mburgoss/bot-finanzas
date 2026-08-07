@@ -726,6 +726,17 @@ def _caption_panel(ahora, n: dict) -> str:
     return "\n".join(lineas)
 
 
+def _id_guardado(store, clave) -> int | None:
+    """Lee un message_id de la hoja Config, o None si no hay uno usable.
+
+    Tolera que la planilla lo devuelva como número: guardamos "12345" pero
+    Sheets puede devolver 12345 o incluso 12345.0, y un `.isdigit()` sobre eso
+    daba False — el panel creía que no existía y creaba otro."""
+    crudo = str(store.get_config(clave, "") or "").strip()
+    m = re.fullmatch(r"(\d+)(?:\.0*)?", crudo)
+    return int(m.group(1)) if m else None
+
+
 def _panel_al_dia(store, ahora):
     """Mantiene UN mensaje fijado en el chat con el gráfico del ciclo al día.
 
@@ -787,18 +798,34 @@ def _panel_al_dia(store, ahora):
     if png is None:
         return
 
-    store.set_config("panel_firma", firma)
-    mid = str(store.get_config("panel_message_id", "") or "").strip()
-    if mid.isdigit() and telegram_bot.editar_foto(int(mid), png, caption):
+    def _marcar():
+        # La firma se guarda DESPUÉS de que Telegram acepta: guardarla antes
+        # hacía que un envío fallido quedara registrado como hecho y la corrida
+        # siguiente ni lo reintentara.
+        store.set_config("panel_firma", firma)
         store.set_config("panel_actualizado", ahora_naive.isoformat(timespec="seconds"))
-        return
 
-    # No había panel, o el mensaje ya no existe (lo borraste): se crea y se fija.
+    mid = _id_guardado(store, "panel_message_id")
+    if mid:
+        estado = telegram_bot.editar_foto(mid, png, caption)
+        if estado == "ok":
+            _marcar()
+            return
+        if estado == "error":
+            # Falla pasajera (429, 5xx, red). NO se crea un panel nuevo: eso es
+            # lo que dejaba fotos fijadas de más. Se reintenta en la corrida
+            # siguiente, que es dentro de un minuto.
+            return
+
+    # No hay panel, o el mensaje ya no existe. Se desfija el viejo antes de
+    # crear el nuevo para no acumular fijados.
+    if mid:
+        telegram_bot.desfijar(mid)
     msg = telegram_bot.enviar_foto(png, caption)
     if not msg:
         return
     store.set_config("panel_message_id", str(msg["message_id"]))
-    store.set_config("panel_actualizado", ahora_naive.isoformat(timespec="seconds"))
+    _marcar()
     telegram_bot.fijar(msg["message_id"])
 
 
