@@ -85,7 +85,7 @@ def _leyenda(ax, series, tema):
 
     # Respaldo en color de fondo, por si una curva sube antes de lo esperado.
     ax.add_patch(FancyBboxPatch(
-        (0.005, 0.985 - alto), 0.735, alto,
+        (0.005, 0.985 - alto), 0.648, alto,
         boxstyle="round,pad=0.012,rounding_size=0.02",
         transform=ax.transAxes, facecolor=tema["fondo"], edgecolor="none",
         zorder=6, clip_on=False))
@@ -100,9 +100,9 @@ def _leyenda(ax, series, tema):
                 fontsize=11.5 if principal else 10.5,
                 color=tema["tinta"] if principal else tema["tinta2"],
                 va="center", ha="left", zorder=7)
-        # Todos los montos comparten el borde derecho: el hero manda por tamaño,
-        # no por posición, y la columna sigue leyéndose como columna.
-        ax.text(0.600, y, pesos(s["valores"][-1]), transform=ax.transAxes,
+        # Los tres montos comparten el borde derecho, lo más cerca del mes que
+        # permita la cifra hero sin montarse encima de su etiqueta.
+        ax.text(0.518, y, pesos(s["valores"][-1]), transform=ax.transAxes,
                 fontsize=17 if principal else 10.5,
                 color=tema["tinta"] if principal else tema["tinta2"],
                 fontweight="bold" if principal else "normal",
@@ -111,7 +111,7 @@ def _leyenda(ax, series, tema):
             d = delta_pct(actual, s["valores"][-1])
             # Gastar más que el ciclo de referencia es la dirección mala.
             # El signo menos va tipográfico (−), que el guión ASCII casi no se ve.
-            ax.text(0.625, y, f"{d:+d}%".replace("-", "−"),
+            ax.text(0.543, y, f"{d:+d}%".replace("-", "−"),
                     transform=ax.transAxes, fontsize=10.5,
                     color=tema["sube"] if d > 0 else tema["baja"],
                     va="center", ha="left", zorder=7)
@@ -211,9 +211,7 @@ def ritmo_de_gasto(series, dias_ciclo: int, subtitulo: str,
         ax.plot([dias_ciclo], [proyeccion], marker="o", markersize=5,
                 markerfacecolor=t["fondo"], markeredgecolor=t["series"][0],
                 markeredgewidth=1.4, zorder=6)
-        # "proy." y no "proyección": con la leyenda más ancha por la cifra hero,
-        # el texto largo quedaba tapado por el respaldo de la leyenda.
-        ax.annotate(f"proy. {pesos(proyeccion)}",
+        ax.annotate(f"proyección {pesos(proyeccion)}",
                     xy=(dias_ciclo, proyeccion), xytext=(-6, 9),
                     textcoords="offset points", ha="right", va="bottom",
                     fontsize=9, color=t["apagado"], zorder=6)
