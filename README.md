@@ -80,13 +80,19 @@ El texto del panel separa las **dos formas de contar**, que es lo que antes se
 prestaba a confusión:
 
 ```
-LO QUE COMPRASTE  (el gráfico)      LO QUE TE VAN A COBRAR
-Crédito (monto completo)             Cuotas que se facturan
-Débito                               Débito + transf − ingresos   ← el mismo
-Transferencias enviadas              Total a pagar                  número que
-Ingresos recibidos                                                  las 3 de
-Gastado en el ciclo                  + Deuda total tarjeta          la izquierda
+LO QUE COMPRASTE  (el gráfico)          LO QUE TE COBRAN EL 22
+Débito + transf − ingresos   $251.794   Débito + transf − ingresos  $251.794
+Crédito comprado (completo)  $191.988   Cuotas que facturan el 22   $651.467
+= Gastado hasta hoy          $443.782   = Total mes                 $903.261
+        └── la misma primera fila en los dos bloques ──┘
 ```
+
+Las dos tablas **arrancan con la misma fila a propósito**. Ese es el término que
+los dos totales comparten, y ponerlo primero deja ver de una que **lo único que
+cambia entre ellos es cómo entra el crédito**.
+
+Los porcentajes contra los meses anteriores y la proyección de cierre **no van en
+el texto**: ya están dibujados en la imagen.
 
 Las dos usan **la misma ventana de fechas** (del 22 al 21). La única diferencia es
 el crédito: a la izquierda va el **monto completo** el día de la compra (lo que

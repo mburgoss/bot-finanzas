@@ -650,18 +650,22 @@ def _resumen_nocturno(store, hoy: date):
 
 def _tabla(filas) -> str:
     """Bloque <pre> de 'etiqueta ....... $monto', alineado a la derecha.
-    `filas` = [(etiqueta, monto)]. Los negativos van con el signo menos
-    tipográfico, que en monoespaciado se distingue del guión."""
+
+    `filas` = [(etiqueta, monto)]. La etiqueta que arranca con '=' es el total y
+    se marca con ✓, para que se vea de una que las de arriba suman esa.
+    Los negativos llevan el signo menos tipográfico, que en monoespaciado no se
+    confunde con un guión."""
     textos = [("−" + _pesos(abs(m))) if m < 0 else _pesos(m) for _e, m in filas]
     w_lbl = max(len(e) for e, _m in filas)
     w_amt = max(len(t) for t in textos)
-    return "<pre>" + "\n".join(
-        f"{e.ljust(w_lbl)}  {t:>{w_amt}}" for (e, _m), t in zip(filas, textos)
-    ) + "</pre>"
+    lineas = []
+    for (etiqueta, _m), texto in zip(filas, textos):
+        marca = " ✓" if etiqueta.startswith("=") else ""
+        lineas.append(f"{etiqueta.ljust(w_lbl)}  {texto:>{w_amt}}{marca}")
+    return "<pre>" + "\n".join(lineas) + "</pre>"
 
 
-def _caption_panel(store, ahora, ciclos, dias_ciclo, transcurridos, totales,
-                   proyeccion):
+def _caption_panel(store, ahora, ciclos, dias_ciclo, transcurridos):
     """Texto del panel: las dos formas de contar, separadas y con nombre propio.
 
     Se muestran juntas a propósito. El problema nunca fue tener dos números,
@@ -679,34 +683,28 @@ def _caption_panel(store, ahora, ciclos, dias_ciclo, transcurridos, totales,
 
     lineas = [f"<b>Ciclo {ciclo_lbl}</b> · día {transcurridos + 1} de {dias_ciclo}", ""]
 
+    # Los dos bloques arrancan con la MISMA línea a propósito: así se ve de una
+    # que lo único que cambia entre los dos totales es cómo entra el crédito.
+    # Desglosar débito/transferencias/ingresos por separado rompía ese paralelo.
     lineas.append("<b>LO QUE COMPRASTE</b>  <i>(el gráfico)</i>")
-    compraste = [("Crédito (monto completo)", g["credito"]),
-                 ("Débito", g["debito"]),
-                 ("Transferencias enviadas", g["transferencia"])]
+    lineas.append(_tabla([
+        ("Débito + transf − ingresos", otros),
+        ("Crédito comprado (completo)", g["credito"]),
+        ("= Gastado hasta hoy", gastado),
+    ]))
     if g["ingreso"]:
-        compraste.append(("Ingresos recibidos", g["ingreso"]))
-    compraste.append(("Gastado en el ciclo", gastado))
-    lineas.append(_tabla(compraste))
+        lineas.append(f"<i>(ya descontados {_pesos(abs(g['ingreso']))} de ingresos)</i>")
 
-    # Los porcentajes son contra el mismo 'gastado', a la misma altura del ciclo.
-    partes = []
-    for tot, (lbl, _i, _c) in zip(totales[1:], ciclos[1:]):
-        if tot:
-            partes.append(f"{_delta_pct(gastado, tot):+d}% vs {_mes_corto(lbl)}")
-    if partes:
-        lineas.append(" · ".join(partes) + " (a esta altura)")
-    if proyeccion:
-        lineas.append(f"Si seguís así, cerrás en {_pesos(proyeccion)}")
-
+    # Los % contra los meses anteriores y la proyección NO van acá: ya están
+    # dibujados en la imagen, y repetirlos en texto era parte de por qué el
+    # panel se leía como una pila de números sueltos.
     lineas.append("")
-    lineas.append("<b>LO QUE TE VAN A COBRAR</b>")
-    cobran = [("Cuotas que se facturan", cuotas_ciclo),
-              # Mismo número que las tres líneas de arriba sumadas: es el término
-              # que los dos totales comparten, y verlo repetido es lo que deja
-              # cuadrar la cuenta a ojo.
-              ("Débito + transf − ingresos", otros),
-              ("Total a pagar", cuotas_ciclo + otros)]
-    lineas.append(_tabla(cobran))
+    lineas.append(f"<b>LO QUE TE COBRAN EL {config.BILLING_DAY}</b>")
+    lineas.append(_tabla([
+        ("Débito + transf − ingresos", otros),      # el mismo número de arriba
+        (f"Cuotas que facturan el {config.BILLING_DAY}", cuotas_ciclo),
+        ("= Total mes", cuotas_ciclo + otros),
+    ]))
     if deuda:
         plural = "ciclo" if ciclos_por_delante == 1 else "ciclos"
         lineas.append(f"Deuda total tarjeta: <b>{_pesos(deuda)}</b> "
@@ -758,8 +756,7 @@ def _panel_al_dia(store, ahora, hubo_cambios: bool):
     if png is None:
         return
 
-    caption = _caption_panel(store, ahora, ciclos, dias_ciclo, transcurridos,
-                             totales, proyeccion)
+    caption = _caption_panel(store, ahora, ciclos, dias_ciclo, transcurridos)
 
     mid = str(store.get_config("panel_message_id", "") or "").strip()
     if mid.isdigit() and telegram_bot.editar_foto(int(mid), png, caption):
