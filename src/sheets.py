@@ -503,9 +503,9 @@ class Store:
 
     # --- Ritmo de gasto (por fecha de compra, para el resumen nocturno) ---
     def _netos_en(self, desde: date, hasta: date):
-        """Itera (fecha, neto, categoría) de los movimientos vigentes cuya FECHA
-        cae en [desde, hasta]. Cuenta el monto completo en la fecha: los gastos
-        suman y los ingresos restan."""
+        """Itera (fecha, neto, categoría, tipo) de los movimientos vigentes cuya
+        FECHA cae en [desde, hasta]. Cuenta el monto completo en la fecha: los
+        gastos suman y los ingresos restan."""
         for reg in self._registros():
             if str(reg.get("estado") or "").lower() == "anulado":
                 continue
@@ -517,13 +517,13 @@ class Store:
                 continue
             neto = -abs(_num(reg.get("monto"))) if tipo == "ingreso" else abs(_num(reg.get("monto")))
             cat = str(reg.get("categoria") or "").strip() or config.SIN_CATEGORIA
-            yield f, neto, cat
+            yield f, neto, cat, tipo
 
     def gasto_neto_por_fecha(self, desde: date, hasta: date) -> tuple[int, dict]:
         """Suma neta y desglose por categoría del período. Sirve para comparar el
         ritmo de gasto entre ciclos."""
         total, por_cat = 0, {}
-        for _f, neto, cat in self._netos_en(desde, hasta):
+        for _f, neto, cat, _tipo in self._netos_en(desde, hasta):
             total += neto
             por_cat[cat] = por_cat.get(cat, 0) + neto
         return total, por_cat
@@ -533,9 +533,35 @@ class Store:
         gráfico. Solo trae los días con movimiento; los huecos los rellena
         `grafico.acumular`."""
         por_dia = {}
-        for f, neto, _cat in self._netos_en(desde, hasta):
+        for f, neto, _cat, _tipo in self._netos_en(desde, hasta):
             por_dia[f] = por_dia.get(f, 0) + neto
         return por_dia
+
+    def desglose_de_gasto(self, desde: date, hasta: date) -> dict:
+        """Abre el 'Gastado' del gráfico por tipo, que es lo que hace falta para
+        cuadrarlo contra el 'Total del mes'.
+
+        Devuelve {'credito', 'debito', 'transferencia', 'ingreso'} donde crédito
+        va a monto COMPLETO el día de la compra (no repartido en cuotas) e
+        ingreso viene NEGATIVO. La suma de los cuatro es el 'Gastado'.
+
+        Ojo con la diferencia clave: acá 'credito' es lo que COMPRASTE en el
+        período; en calcular_totales() es la CUOTA que se factura en el ciclo,
+        que incluye compras de meses anteriores."""
+        partes = {"credito": 0, "debito": 0, "transferencia": 0, "ingreso": 0}
+        for _f, neto, _cat, tipo in self._netos_en(desde, hasta):
+            partes[tipo] = partes.get(tipo, 0) + neto
+        return partes
+
+    def deuda_de_tarjeta(self, ciclo_actual: str) -> tuple[int, int]:
+        """Cuotas de crédito todavía no facturadas: la de este ciclo y todas las
+        que vienen. Devuelve (monto, cuántos ciclos quedan por delante).
+
+        Es un SALDO, no un flujo del mes: responde '¿cuánto debo en total?', que
+        no se puede leer de ninguno de los otros números."""
+        credito = self.calcular_totales()["credito"]
+        pendientes = {c: m for c, m in credito.items() if c >= ciclo_actual}
+        return sum(pendientes.values()), len(pendientes)
 
     def promedio_ciclos(self, inicio_actual: date, n: int = 3) -> int:
         """Promedio del gasto neto de los últimos `n` ciclos completos anteriores

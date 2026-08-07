@@ -71,10 +71,33 @@ como fila `revisar` en la planilla para que lo completes (nunca lo pierde en
 silencio). Para que quede 100% automático, reenvíame el correo del banco nuevo y
 agrego su formato + su remitente al `BANK_SENDERS`.
 
-### 📌 Panel fijado (el gráfico siempre a la vista)
-Un **único mensaje fijado arriba del chat** con el gráfico del ciclo al día. No se
-manda una foto nueva cada vez: se **edita siempre el mismo mensaje**, así que no se
-entierra en el historial y **editar no genera notificación**.
+### 📌 Panel fijado (todo a la vista, siempre)
+Un **único mensaje fijado arriba del chat** con el gráfico del ciclo y **todos los
+totales cuadrados**. No se manda una foto nueva cada vez: se **edita siempre el mismo
+mensaje**, así que no se entierra en el historial y **editar no genera notificación**.
+
+El texto del panel separa las **dos formas de contar**, que es lo que antes se
+prestaba a confusión:
+
+```
+LO QUE COMPRASTE  (el gráfico)      LO QUE TE VAN A COBRAR
+Crédito (monto completo)             Cuotas que se facturan
+Débito                               Débito + transf − ingresos   ← el mismo
+Transferencias enviadas              Total a pagar                  número que
+Ingresos recibidos                                                  las 3 de
+Gastado en el ciclo                  + Deuda total tarjeta          la izquierda
+```
+
+Las dos usan **la misma ventana de fechas** (del 22 al 21). La única diferencia es
+el crédito: a la izquierda va el **monto completo** el día de la compra (lo que
+decidiste gastar), a la derecha va la **cuota** que cae en este ciclo (lo que te
+descuentan, e incluye compras de meses anteriores). Por eso los dos totales no
+coinciden, y por eso el bloque del medio aparece en los dos lados: es el término
+que comparten, y verlo repetido deja cuadrar la cuenta a ojo.
+
+La **deuda total tarjeta** es la suma de todas las cuotas todavía no facturadas
+—de este ciclo y de los que vienen—. Es un saldo, no un flujo del mes: no se puede
+deducir de ninguno de los otros números.
 
 Se refresca cuando entra un movimiento nuevo, y si no pasa nada, cada `PANEL_MINUTOS`
 (por defecto 30). El id del mensaje vive en la hoja `Config` (`panel_message_id`):

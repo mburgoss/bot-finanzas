@@ -648,6 +648,74 @@ def _resumen_nocturno(store, hoy: date):
         telegram_bot.enviar(texto)
 
 
+def _tabla(filas) -> str:
+    """Bloque <pre> de 'etiqueta ....... $monto', alineado a la derecha.
+    `filas` = [(etiqueta, monto)]. Los negativos van con el signo menos
+    tipográfico, que en monoespaciado se distingue del guión."""
+    textos = [("−" + _pesos(abs(m))) if m < 0 else _pesos(m) for _e, m in filas]
+    w_lbl = max(len(e) for e, _m in filas)
+    w_amt = max(len(t) for t in textos)
+    return "<pre>" + "\n".join(
+        f"{e.ljust(w_lbl)}  {t:>{w_amt}}" for (e, _m), t in zip(filas, textos)
+    ) + "</pre>"
+
+
+def _caption_panel(store, ahora, ciclos, dias_ciclo, transcurridos, totales,
+                   proyeccion):
+    """Texto del panel: las dos formas de contar, separadas y con nombre propio.
+
+    Se muestran juntas a propósito. El problema nunca fue tener dos números,
+    sino que se llamaran parecido y vivieran en pantallas distintas: acá cada
+    bloque dice qué pregunta responde, y los dos cuadran a la vista.
+    """
+    ciclo_lbl, ini_act, hoy = ciclos[0]
+    g = store.desglose_de_gasto(ini_act, hoy)
+    otros = g["debito"] + g["transferencia"] + g["ingreso"]   # ingreso ya es negativo
+    gastado = g["credito"] + otros
+
+    ciclo_id = billing.ciclo_de_compra(hoy)
+    cuotas_ciclo = store.desglose_de_ciclo(ciclo_id)["tarjeta"]
+    deuda, ciclos_por_delante = store.deuda_de_tarjeta(ciclo_id)
+
+    lineas = [f"<b>Ciclo {ciclo_lbl}</b> · día {transcurridos + 1} de {dias_ciclo}", ""]
+
+    lineas.append("<b>LO QUE COMPRASTE</b>  <i>(el gráfico)</i>")
+    compraste = [("Crédito (monto completo)", g["credito"]),
+                 ("Débito", g["debito"]),
+                 ("Transferencias enviadas", g["transferencia"])]
+    if g["ingreso"]:
+        compraste.append(("Ingresos recibidos", g["ingreso"]))
+    compraste.append(("Gastado en el ciclo", gastado))
+    lineas.append(_tabla(compraste))
+
+    # Los porcentajes son contra el mismo 'gastado', a la misma altura del ciclo.
+    partes = []
+    for tot, (lbl, _i, _c) in zip(totales[1:], ciclos[1:]):
+        if tot:
+            partes.append(f"{_delta_pct(gastado, tot):+d}% vs {_mes_corto(lbl)}")
+    if partes:
+        lineas.append(" · ".join(partes) + " (a esta altura)")
+    if proyeccion:
+        lineas.append(f"Si seguís así, cerrás en {_pesos(proyeccion)}")
+
+    lineas.append("")
+    lineas.append("<b>LO QUE TE VAN A COBRAR</b>")
+    cobran = [("Cuotas que se facturan", cuotas_ciclo),
+              # Mismo número que las tres líneas de arriba sumadas: es el término
+              # que los dos totales comparten, y verlo repetido es lo que deja
+              # cuadrar la cuenta a ojo.
+              ("Débito + transf − ingresos", otros),
+              ("Total a pagar", cuotas_ciclo + otros)]
+    lineas.append(_tabla(cobran))
+    if deuda:
+        plural = "ciclo" if ciclos_por_delante == 1 else "ciclos"
+        lineas.append(f"Deuda total tarjeta: <b>{_pesos(deuda)}</b> "
+                      f"({ciclos_por_delante} {plural} por delante)")
+
+    lineas.append(f"<i>Actualizado {ahora.strftime('%d/%m %H:%M')}</i>")
+    return "\n".join(lineas)
+
+
 def _panel_al_dia(store, ahora, hubo_cambios: bool):
     """Mantiene UN mensaje fijado en el chat con el gráfico del ciclo al día.
 
@@ -690,21 +758,8 @@ def _panel_al_dia(store, ahora, hubo_cambios: bool):
     if png is None:
         return
 
-    ciclo_lbl, lbl_ant1, lbl_ant2 = (c[0] for c in ciclos)
-    partes = []
-    if totales[1]:
-        partes.append(f"{_delta_pct(total_act, totales[1]):+d}% vs {_mes_corto(lbl_ant1)}")
-    if totales[2]:
-        partes.append(f"{_delta_pct(total_act, totales[2]):+d}% vs {_mes_corto(lbl_ant2)}")
-
-    lineas = [f"<b>Ciclo {ciclo_lbl}</b> · día {transcurridos + 1} de {dias_ciclo}",
-              f"Gastado: <b>{_pesos(total_act)}</b>"]
-    if partes:
-        lineas.append(" · ".join(partes) + " (a esta altura)")
-    if proyeccion:
-        lineas.append(f"Proyección de cierre: {_pesos(proyeccion)}")
-    lineas.append(f"<i>Actualizado {ahora.strftime('%d/%m %H:%M')}</i>")
-    caption = "\n".join(lineas)
+    caption = _caption_panel(store, ahora, ciclos, dias_ciclo, transcurridos,
+                             totales, proyeccion)
 
     mid = str(store.get_config("panel_message_id", "") or "").strip()
     if mid.isdigit() and telegram_bot.editar_foto(int(mid), png, caption):
