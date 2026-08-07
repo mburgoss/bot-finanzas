@@ -536,14 +536,12 @@ def _grafico_ritmo(store, ciclos, dias_ciclo: int, transcurridos: int,
         return None
 
 
-def _resumen_nocturno(store, hoy: date):
-    """Arma y envía el resumen del día: un gráfico del gasto acumulado del ciclo
-    contra los DOS ciclos anteriores a la misma altura, más las categorías que
-    más crecieron y una proyección vs el promedio.
+def _ventanas_de_ciclo(hoy: date):
+    """Ventanas del ciclo en curso y los DOS anteriores, cortadas al mismo día.
 
-    El gráfico va como foto y el texto como caption. Si el gráfico no se pudo
-    generar o Telegram lo rechaza, cae al resumen de solo texto con las barras
-    ASCII de siempre — el resumen nunca se pierde por un problema de imagen."""
+    Devuelve (dias_ciclo, transcurridos, [(etiqueta, inicio, corte), ...]) con el
+    ciclo en curso primero. Lo usan el resumen nocturno y el panel fijado, para
+    que no puedan discrepar en los cortes."""
     ini_act = billing.inicio_de_ciclo(hoy)
     prox = billing.proximo_inicio_de_ciclo(hoy)
     dias_ciclo = (prox - ini_act).days
@@ -557,13 +555,29 @@ def _resumen_nocturno(store, hoy: date):
     corte_ant1 = min(ini_ant1 + timedelta(days=transcurridos), ini_act - timedelta(days=1))
     corte_ant2 = min(ini_ant2 + timedelta(days=transcurridos), ini_ant1 - timedelta(days=1))
 
+    ciclos = [
+        (_nombre_ciclo(billing.ciclo_de_compra(hoy)), ini_act, hoy),
+        (_nombre_ciclo(billing.ciclo_de_compra(ini_ant1)), ini_ant1, corte_ant1),
+        (_nombre_ciclo(billing.ciclo_de_compra(ini_ant2)), ini_ant2, corte_ant2),
+    ]
+    return dias_ciclo, transcurridos, ciclos
+
+
+def _resumen_nocturno(store, hoy: date):
+    """Arma y envía el resumen del día: un gráfico del gasto acumulado del ciclo
+    contra los DOS ciclos anteriores a la misma altura, más las categorías que
+    más crecieron y una proyección vs el promedio.
+
+    El gráfico va como foto y el texto como caption. Si el gráfico no se pudo
+    generar o Telegram lo rechaza, cae al resumen de solo texto con las barras
+    ASCII de siempre — el resumen nunca se pierde por un problema de imagen."""
+    dias_ciclo, transcurridos, ciclos = _ventanas_de_ciclo(hoy)
+    ((ciclo_lbl, ini_act, _h), (lbl_ant1, ini_ant1, corte_ant1),
+     (lbl_ant2, ini_ant2, corte_ant2)) = ciclos
+
     total_act, cat_act = store.gasto_neto_por_fecha(ini_act, hoy)
     total_ant1, cat_ant1 = store.gasto_neto_por_fecha(ini_ant1, corte_ant1)
     total_ant2, _c2 = store.gasto_neto_por_fecha(ini_ant2, corte_ant2)
-
-    ciclo_lbl = _nombre_ciclo(billing.ciclo_de_compra(hoy))
-    lbl_ant1 = _nombre_ciclo(billing.ciclo_de_compra(ini_ant1))
-    lbl_ant2 = _nombre_ciclo(billing.ciclo_de_compra(ini_ant2))
 
     promedio = store.promedio_ciclos(ini_act, n=3)
     # Proyección de cierre: recién desde el 4º día. Con uno o dos días de datos
@@ -634,6 +648,78 @@ def _resumen_nocturno(store, hoy: date):
         telegram_bot.enviar(texto)
 
 
+def _panel_al_dia(store, ahora, hubo_cambios: bool):
+    """Mantiene UN mensaje fijado en el chat con el gráfico del ciclo al día.
+
+    En vez de mandar una foto nueva cada vez (que se entierra en el historial),
+    edita siempre el mismo mensaje: queda fijado arriba del chat, siempre
+    actualizado. Editar no genera notificación, así que refrescarlo no molesta.
+    El id vive en la hoja Config ('panel_message_id').
+
+    Solo se refresca si hubo un movimiento nuevo o si pasaron PANEL_MINUTOS:
+    regenerar la imagen en cada corrida (una por minuto) sería puro gasto.
+    """
+    if not config.PANEL_ACTIVO:
+        return
+
+    # La marca se guarda naive: entre corridas puede faltar tzdata y mezclar
+    # aware con naive haría reventar la resta.
+    ahora_naive = ahora.replace(tzinfo=None)
+    # str() a propósito: la hoja puede devolver el valor como número o como
+    # fecha ya interpretada, no siempre como el texto que se guardó.
+    ultimo = str(store.get_config("panel_actualizado", "") or "")
+    if not hubo_cambios and ultimo:
+        try:
+            minutos = (ahora_naive - datetime.fromisoformat(ultimo)).total_seconds() / 60
+            if 0 <= minutos < config.PANEL_MINUTOS:
+                return
+        except (ValueError, TypeError):
+            pass    # marca ilegible: se regenera y se reescribe
+
+    hoy = ahora.date()
+    dias_ciclo, transcurridos, ciclos = _ventanas_de_ciclo(hoy)
+    totales = [store.gasto_neto_por_fecha(ini, corte)[0] for _lbl, ini, corte in ciclos]
+    total_act = totales[0]
+
+    proyeccion = (total_act * dias_ciclo // (transcurridos + 1)
+                  if total_act > 0 and 3 <= transcurridos < dias_ciclo - 1 else None)
+    png = _grafico_ritmo(store,
+                         [(lbl, ini, corte, tot)
+                          for (lbl, ini, corte), tot in zip(ciclos, totales)],
+                         dias_ciclo, transcurridos, proyeccion)
+    if png is None:
+        return
+
+    ciclo_lbl, lbl_ant1, lbl_ant2 = (c[0] for c in ciclos)
+    partes = []
+    if totales[1]:
+        partes.append(f"{_delta_pct(total_act, totales[1]):+d}% vs {_mes_corto(lbl_ant1)}")
+    if totales[2]:
+        partes.append(f"{_delta_pct(total_act, totales[2]):+d}% vs {_mes_corto(lbl_ant2)}")
+
+    lineas = [f"<b>Ciclo {ciclo_lbl}</b> · día {transcurridos + 1} de {dias_ciclo}",
+              f"Gastado: <b>{_pesos(total_act)}</b>"]
+    if partes:
+        lineas.append(" · ".join(partes) + " (a esta altura)")
+    if proyeccion:
+        lineas.append(f"Proyección de cierre: {_pesos(proyeccion)}")
+    lineas.append(f"<i>Actualizado {ahora.strftime('%d/%m %H:%M')}</i>")
+    caption = "\n".join(lineas)
+
+    mid = str(store.get_config("panel_message_id", "") or "").strip()
+    if mid.isdigit() and telegram_bot.editar_foto(int(mid), png, caption):
+        store.set_config("panel_actualizado", ahora_naive.isoformat(timespec="seconds"))
+        return
+
+    # No había panel, o el mensaje ya no existe (lo borraste): se crea y se fija.
+    msg = telegram_bot.enviar_foto(png, caption)
+    if not msg:
+        return
+    store.set_config("panel_message_id", str(msg["message_id"]))
+    store.set_config("panel_actualizado", ahora_naive.isoformat(timespec="seconds"))
+    telegram_bot.fijar(msg["message_id"])
+
+
 def _quizas_resumen_nocturno(store):
     """Envía el resumen una vez al día, a partir de RESUMEN_HORA (hora local).
 
@@ -691,6 +777,12 @@ def main():
         except gspread.exceptions.APIError as e:
             print(f"[aviso] no pude regenerar las hojas ahora: {e}")
     _quizas_resumen_nocturno(store)
+    try:
+        _panel_al_dia(store, _ahora_local(), hubo_cambios=bool(nuevos))
+    except Exception as e:
+        # El panel es un extra: si falla, no puede tumbar la corrida que ya
+        # registró los movimientos.
+        print(f"[aviso] no pude actualizar el panel: {e}")
     print(f"Listo. {nuevos} movimiento(s) nuevo(s).")
 
 

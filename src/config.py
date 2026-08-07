@@ -51,6 +51,12 @@ RESUMEN_HORA = int(os.environ.get("RESUMEN_HORA", "22"))
 # Tema del gráfico del resumen: "claro" u "oscuro" (ver src/grafico.py).
 GRAFICO_TEMA = os.environ.get("GRAFICO_TEMA", "claro").strip().lower()
 
+# Panel fijado: un único mensaje con el gráfico, siempre al día, arriba del chat.
+PANEL_ACTIVO = os.environ.get("PANEL_ACTIVO", "1").strip().lower() not in ("0", "false", "no")
+# Cada cuántos minutos refrescarlo si NO hubo movimientos nuevos. Con un
+# movimiento nuevo se refresca al toque, sin esperar.
+PANEL_MINUTOS = int(os.environ.get("PANEL_MINUTOS", "30"))
+
 # Vista previa a pedido: manda el resumen del día sin esperar a RESUMEN_HORA y
 # sin marcar el día como enviado. Se activa desde el input del workflow.
 FORZAR_RESUMEN = os.environ.get("FORZAR_RESUMEN", "").strip().lower() in ("1", "true", "yes", "si", "sí")

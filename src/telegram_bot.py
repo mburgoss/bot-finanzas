@@ -5,6 +5,8 @@ getUpdates con un offset guardado en la Sheet (config 'telegram_offset') para
 procesar los comandos nuevos (ej: /cuotas <id> <n>) y los toques de botones
 (callback_query, ej: elegir categoría o número de cuotas)."""
 
+import json
+
 import requests
 
 from . import config
@@ -40,9 +42,10 @@ def enviar(texto: str, teclado: dict | None = None, parse_mode: str = "HTML") ->
     return True
 
 
-def enviar_foto(imagen: bytes, caption: str = "", parse_mode: str = "HTML") -> bool:
-    """Manda un PNG (sendPhoto). Devuelve False si Telegram lo rechazó, para que
-    quien llama pueda caer al mensaje de texto en vez de quedarse sin resumen.
+def enviar_foto(imagen: bytes, caption: str = "", parse_mode: str = "HTML") -> dict | None:
+    """Manda un PNG (sendPhoto). Devuelve el mensaje creado, o None si Telegram
+    lo rechazó, para que quien llama pueda caer al texto en vez de quedarse sin
+    resumen. El dict trae 'message_id', necesario para editarlo después.
 
     El caption admite 1024 caracteres: recortar es tarea de quien llama, acá solo
     se trunca como red de seguridad."""
@@ -55,6 +58,64 @@ def enviar_foto(imagen: bytes, caption: str = "", parse_mode: str = "HTML") -> b
         },
         files={"photo": ("resumen.png", imagen, "image/png")},
         timeout=60,
+    )
+    try:
+        data = resp.json()
+    except ValueError:
+        print(f"[aviso] Telegram respondió algo ilegible (HTTP {resp.status_code})")
+        return None
+    if not data.get("ok"):
+        print(f"[aviso] Telegram rechazó la foto: {data.get('description')!r}")
+        return None
+    return data.get("result")
+
+
+def editar_foto(message_id: int, imagen: bytes, caption: str = "",
+                parse_mode: str = "HTML") -> bool:
+    """Reemplaza la imagen de un mensaje ya enviado (editMessageMedia).
+
+    Es lo que sostiene el panel fijado: siempre el MISMO mensaje, con la imagen
+    al día. Editar no genera notificación, así que el panel se puede refrescar
+    seguido sin molestar.
+
+    Devuelve False si el mensaje ya no existe (lo borraste) o Telegram rechaza
+    la edición; ahí quien llama crea uno nuevo."""
+    media = {
+        "type": "photo",
+        "media": "attach://foto",
+        "caption": caption[:1024],
+        "parse_mode": parse_mode,
+    }
+    resp = requests.post(
+        f"{API}/editMessageMedia",
+        data={
+            "chat_id": config.TELEGRAM_CHAT_ID,
+            "message_id": message_id,
+            "media": json.dumps(media),
+        },
+        files={"foto": ("panel.png", imagen, "image/png")},
+        timeout=60,
+    )
+    try:
+        data = resp.json()
+    except ValueError:
+        return False
+    if not data.get("ok"):
+        print(f"[aviso] no pude editar el panel: {data.get('description')!r}")
+        return False
+    return True
+
+
+def fijar(message_id: int) -> bool:
+    """Fija el mensaje arriba del chat (pinChatMessage), sin notificar."""
+    resp = requests.post(
+        f"{API}/pinChatMessage",
+        json={
+            "chat_id": config.TELEGRAM_CHAT_ID,
+            "message_id": message_id,
+            "disable_notification": True,
+        },
+        timeout=30,
     )
     try:
         return bool(resp.json().get("ok"))

@@ -71,6 +71,23 @@ como fila `revisar` en la planilla para que lo completes (nunca lo pierde en
 silencio). Para que quede 100% automático, reenvíame el correo del banco nuevo y
 agrego su formato + su remitente al `BANK_SENDERS`.
 
+### 📌 Panel fijado (el gráfico siempre a la vista)
+Un **único mensaje fijado arriba del chat** con el gráfico del ciclo al día. No se
+manda una foto nueva cada vez: se **edita siempre el mismo mensaje**, así que no se
+entierra en el historial y **editar no genera notificación**.
+
+Se refresca cuando entra un movimiento nuevo, y si no pasa nada, cada `PANEL_MINUTOS`
+(por defecto 30). El id del mensaje vive en la hoja `Config` (`panel_message_id`):
+si lo borrás del chat, la próxima corrida crea uno nuevo y lo vuelve a fijar.
+
+Se apaga con `PANEL_ACTIVO=0`.
+
+> **Por qué acá y no en una app o una web.** Para *solo visualizar*, esto no agrega
+> ninguna superficie nueva: los datos ya pasan por Telegram. Una PWA o un dashboard
+> implicarían una URL más, una sesión más y un deployment más donde tus movimientos
+> pueden leerse. El día que haga falta navegar historial o filtrar, ahí sí conviene
+> una web — hoy no.
+
 ### 🌙 Resumen nocturno automático
 Cada noche (por defecto a las **22:00**, hora `TIMEZONE`) el bot te manda una **imagen**
 con el texto del resumen debajo:
