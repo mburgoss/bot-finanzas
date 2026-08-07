@@ -24,6 +24,7 @@ import matplotlib
 matplotlib.use("Agg")  # sin display: obligatorio antes de importar pyplot
 
 import matplotlib.pyplot as plt  # noqa: E402
+from matplotlib.lines import Line2D  # noqa: E402
 from matplotlib.patches import FancyBboxPatch  # noqa: E402
 from matplotlib.ticker import FuncFormatter, MaxNLocator  # noqa: E402
 
@@ -109,8 +110,43 @@ def _leyenda(ax, series, tema):
         y -= 0.075
 
 
+def _pie_de_tablas(fig, bloques, t):
+    """Dibuja las tablas al pie de la imagen, en dos columnas.
+
+    Van acá y no en el caption de Telegram por una razón concreta: el bloque
+    <pre> del caption se envuelve en pantallas angostas —en un iPhone parte cada
+    fila en dos— y la tabla deja de leerse como tabla. Dentro de la imagen el
+    ancho lo fijamos nosotros, así que las columnas aguantan en cualquier
+    teléfono.
+
+    `bloques` = [(titulo, [(etiqueta, monto, es_total), ...]), ...], máximo dos.
+    Cada monto se ancla a la derecha de su columna: la alineación no depende de
+    una fuente monoespaciada.
+    """
+    columnas = [(0.105, 0.505), (0.560, 0.975)]
+    fig.add_artist(Line2D([0.105, 0.975], [0.285, 0.285],
+                          color=t["grilla"], linewidth=0.8))
+    for (x_izq, x_der), (titulo, filas) in zip(columnas, bloques):
+        fig.text(x_izq, 0.245, titulo.upper(), color=t["apagado"], fontsize=7.5,
+                 fontweight="bold", va="top", ha="left")
+        y = 0.185
+        for etiqueta, monto, es_total in filas:
+            peso = "bold" if es_total else "normal"
+            color = t["tinta"] if es_total else t["tinta2"]
+            if es_total:    # regla que cierra los sumandos, como en una suma escrita
+                fig.add_artist(Line2D([x_izq, x_der], [y + 0.032, y + 0.032],
+                                      color=t["eje"], linewidth=0.8))
+            texto = ("−" if monto < 0 else "") + f"${abs(int(monto)):,.0f}".replace(",", ".")
+            fig.text(x_izq, y, etiqueta, color=color, fontsize=9,
+                     fontweight=peso, va="top", ha="left")
+            fig.text(x_der, y, texto, color=color, fontsize=9,
+                     fontweight=peso, va="top", ha="right")
+            y -= 0.058
+
+
 def ritmo_de_gasto(series, dias_ciclo: int, subtitulo: str,
-                   proyeccion: int | None = None, tema: str = "claro") -> bytes:
+                   proyeccion: int | None = None, tema: str = "claro",
+                   bloques=None) -> bytes:
     """Devuelve el PNG (bytes) del gráfico de ritmo de gasto.
 
     `series` es una lista de {"etiqueta": str, "valores": [acumulado por día]},
@@ -123,7 +159,9 @@ def ritmo_de_gasto(series, dias_ciclo: int, subtitulo: str,
     x = list(range(1, dias_con_datos + 1))
 
     plt.rcParams["font.family"] = "DejaVu Sans"
-    fig, ax = plt.subplots(figsize=(6.4, 4.0), dpi=190)
+    # Con tablas al pie la imagen crece: el gráfico conserva su alto y las
+    # tablas se llevan el espacio nuevo, no se lo quitan a la curva.
+    fig, ax = plt.subplots(figsize=(6.4, 5.5 if bloques else 4.0), dpi=190)
     fig.patch.set_facecolor(t["fondo"])
     ax.set_facecolor(t["fondo"])
 
@@ -184,14 +222,25 @@ def ritmo_de_gasto(series, dias_ciclo: int, subtitulo: str,
 
     _leyenda(ax, series, t)
 
-    # --- Encabezado y nota al pie, fuera del área de trazado ---
-    fig.subplots_adjust(left=0.105, right=0.975, top=0.80, bottom=0.145)
-    fig.text(0.105, 0.955, "Ritmo de gasto", color=t["tinta"],
-             fontsize=13.5, fontweight="bold", va="top", ha="left")
-    fig.text(0.105, 0.885, subtitulo, color=t["tinta2"],
-             fontsize=9, va="top", ha="left")
+    # --- Encabezado, tablas y nota al pie, fuera del área de trazado ---
+    if bloques:
+        fig.subplots_adjust(left=0.105, right=0.975, top=0.855, bottom=0.40)
+        fig.text(0.105, 0.968, "Ritmo de gasto", color=t["tinta"],
+                 fontsize=13.5, fontweight="bold", va="top", ha="left")
+        fig.text(0.105, 0.918, subtitulo, color=t["tinta2"],
+                 fontsize=9, va="top", ha="left")
+        _pie_de_tablas(fig, bloques, t)
+        # Arriba de la línea divisoria: abajo choca con el total de la derecha.
+        nota_y = 0.305
+    else:
+        fig.subplots_adjust(left=0.105, right=0.975, top=0.80, bottom=0.145)
+        fig.text(0.105, 0.955, "Ritmo de gasto", color=t["tinta"],
+                 fontsize=13.5, fontweight="bold", va="top", ha="left")
+        fig.text(0.105, 0.885, subtitulo, color=t["tinta2"],
+                 fontsize=9, va="top", ha="left")
+        nota_y = 0.028
     if len(series) > 1:
-        fig.text(0.975, 0.028, "cada ciclo cortado al mismo día",
+        fig.text(0.975, nota_y, "cada ciclo cortado al mismo día",
                  color=t["apagado"], fontsize=7.5, va="bottom", ha="right")
 
     buf = io.BytesIO()

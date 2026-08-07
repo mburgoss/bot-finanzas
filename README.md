@@ -76,8 +76,14 @@ Un **único mensaje fijado arriba del chat** con el gráfico del ciclo y **todos
 totales cuadrados**. No se manda una foto nueva cada vez: se **edita siempre el mismo
 mensaje**, así que no se entierra en el historial y **editar no genera notificación**.
 
-El texto del panel separa las **dos formas de contar**, que es lo que antes se
-prestaba a confusión:
+Las **dos formas de contar** van como dos tablas **dibujadas dentro de la imagen**,
+no en el texto del mensaje. La razón es concreta: el bloque `<pre>` de un caption
+de Telegram **se envuelve en pantallas angostas** —en un iPhone parte cada fila en
+dos y la tabla deja de leerse como tabla—. Dentro de la imagen el ancho lo fijamos
+nosotros, así que las columnas aguantan en cualquier teléfono.
+
+El caption queda corto, con los dos totales y la deuda en líneas sueltas que
+envuelven sin romper nada.
 
 ```
 LO QUE COMPRASTE  (el gráfico)          LO QUE TE COBRAN EL 22

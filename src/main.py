@@ -507,7 +507,7 @@ def _barras(items, ancho: int = 10):
 
 
 def _grafico_ritmo(store, ciclos, dias_ciclo: int, transcurridos: int,
-                   proyeccion: int | None):
+                   proyeccion: int | None, bloques=None):
     """PNG del gasto acumulado del ciclo vs los anteriores, o None si no se pudo.
 
     `ciclos` es [(etiqueta, inicio, corte, total)] con el ciclo en curso primero.
@@ -531,7 +531,7 @@ def _grafico_ritmo(store, ciclos, dias_ciclo: int, transcurridos: int,
         return grafico.ritmo_de_gasto(
             series, dias_ciclo,
             f"Ciclo {ciclos[0][0]} · día {dias} de {dias_ciclo}",
-            proyeccion=proyeccion, tema=config.GRAFICO_TEMA)
+            proyeccion=proyeccion, tema=config.GRAFICO_TEMA, bloques=bloques)
     except Exception as e:
         print(f"[aviso] no pude generar el gráfico del resumen: {e}")
         return None
@@ -666,51 +666,57 @@ def _tabla(filas) -> str:
     return "<pre>" + "\n".join(lineas) + "</pre>"
 
 
-def _caption_panel(store, ahora, ciclos, dias_ciclo, transcurridos):
-    """Texto del panel: las dos formas de contar, separadas y con nombre propio.
-
-    Se muestran juntas a propósito. El problema nunca fue tener dos números,
-    sino que se llamaran parecido y vivieran en pantallas distintas: acá cada
-    bloque dice qué pregunta responde, y los dos cuadran a la vista.
-    """
-    ciclo_lbl, ini_act, hoy = ciclos[0]
+def _numeros_del_ciclo(store, ciclos) -> dict:
+    """Todos los números del ciclo en una pasada, para que la imagen y el texto
+    no puedan discrepar."""
+    _lbl, ini_act, hoy = ciclos[0]
     g = store.desglose_de_gasto(ini_act, hoy)
     otros = g["debito"] + g["transferencia"] + g["ingreso"]   # ingreso ya es negativo
-    gastado = g["credito"] + otros
-
     ciclo_id = billing.ciclo_de_compra(hoy)
-    cuotas_ciclo = store.desglose_de_ciclo(ciclo_id)["tarjeta"]
-    deuda, ciclos_por_delante = store.deuda_de_tarjeta(ciclo_id)
+    cuotas = store.desglose_de_ciclo(ciclo_id)["tarjeta"]
+    deuda, por_delante = store.deuda_de_tarjeta(ciclo_id)
+    return {"otros": otros, "credito": g["credito"], "ingresos": g["ingreso"],
+            "gastado": g["credito"] + otros, "cuotas": cuotas,
+            "total_mes": cuotas + otros, "deuda": deuda, "por_delante": por_delante}
 
-    lineas = [f"<b>Ciclo {ciclo_lbl}</b> · día {transcurridos + 1} de {dias_ciclo}", ""]
 
-    # Los dos bloques arrancan con la MISMA línea a propósito: así se ve de una
-    # que lo único que cambia entre los dos totales es cómo entra el crédito.
-    # Desglosar débito/transferencias/ingresos por separado rompía ese paralelo.
-    lineas.append("<b>LO QUE COMPRASTE</b>  <i>(el gráfico)</i>")
-    lineas.append(_tabla([
-        ("Débito + transf − ingresos", otros),
-        ("Crédito comprado (completo)", g["credito"]),
-        ("= Gastado hasta hoy", gastado),
-    ]))
-    if g["ingreso"]:
-        lineas.append(f"<i>(ya descontados {_pesos(abs(g['ingreso']))} de ingresos)</i>")
+def _bloques_panel(n: dict):
+    """Las dos tablas que van dibujadas AL PIE DE LA IMAGEN.
 
-    # Los % contra los meses anteriores y la proyección NO van acá: ya están
-    # dibujados en la imagen, y repetirlos en texto era parte de por qué el
-    # panel se leía como una pila de números sueltos.
-    lineas.append("")
-    lineas.append(f"<b>LO QUE TE COBRAN EL {config.BILLING_DAY}</b>")
-    lineas.append(_tabla([
-        ("Débito + transf − ingresos", otros),      # el mismo número de arriba
-        (f"Cuotas que facturan el {config.BILLING_DAY}", cuotas_ciclo),
-        ("= Total mes", cuotas_ciclo + otros),
-    ]))
-    if deuda:
-        plural = "ciclo" if ciclos_por_delante == 1 else "ciclos"
-        lineas.append(f"Deuda total tarjeta: <b>{_pesos(deuda)}</b> "
-                      f"({ciclos_por_delante} {plural} por delante)")
+    Las dos arrancan por la misma fila a propósito: es el término que ambos
+    totales comparten, y ponerlo primero deja ver de una que lo único que cambia
+    entre ellos es cómo entra el crédito."""
+    compartida = ("Débito + transf − ingresos", n["otros"], False)
+    return [
+        ("Lo que compraste (el gráfico)", [
+            compartida,
+            ("Crédito comprado, completo", n["credito"], False),
+            ("Gastado hasta hoy", n["gastado"], True),
+        ]),
+        (f"Lo que te cobran el {config.BILLING_DAY}", [
+            compartida,
+            ("Cuotas de este ciclo", n["cuotas"], False),
+            ("Total mes", n["total_mes"], True),
+        ]),
+    ]
 
+
+def _caption_panel(ahora, ciclos, dias_ciclo, transcurridos, n: dict) -> str:
+    """Texto del panel. Corto a propósito: el desglose vive en la imagen, donde
+    las columnas no dependen del ancho de la pantalla. Acá quedan solo los dos
+    totales y la deuda, en líneas que envuelven sin romper nada."""
+    ciclo_lbl = ciclos[0][0]
+    lineas = [f"<b>Ciclo {ciclo_lbl}</b> · día {transcurridos + 1} de {dias_ciclo}",
+              f"Gastado hasta hoy: <b>{_pesos(n['gastado'])}</b>",
+              f"Total mes (lo que te cobran el {config.BILLING_DAY}): "
+              f"<b>{_pesos(n['total_mes'])}</b>"]
+    if n["ingresos"]:
+        lineas.append(f"<i>Del gastado ya se descontaron "
+                      f"{_pesos(abs(n['ingresos']))} de ingresos.</i>")
+    if n["deuda"]:
+        plural = "ciclo" if n["por_delante"] == 1 else "ciclos"
+        lineas.append(f"Deuda total tarjeta: <b>{_pesos(n['deuda'])}</b> "
+                      f"({n['por_delante']} {plural} por delante)")
     lineas.append(f"<i>Actualizado {ahora.strftime('%d/%m %H:%M')}</i>")
     return "\n".join(lineas)
 
@@ -737,9 +743,10 @@ def _panel_al_dia(store, ahora):
 
     hoy = ahora.date()
     dias_ciclo, transcurridos, ciclos = _ventanas_de_ciclo(hoy)
-    # El caption es barato (el Store cachea la planilla); la imagen no. Por eso
-    # se arma primero y se decide con él si vale la pena dibujar.
-    caption = _caption_panel(store, ahora, ciclos, dias_ciclo, transcurridos)
+    # Los números son baratos (el Store cachea la planilla); la imagen no. Por
+    # eso se calculan primero y con ellos se decide si vale la pena dibujar.
+    n = _numeros_del_ciclo(store, ciclos)
+    caption = _caption_panel(ahora, ciclos, dias_ciclo, transcurridos, n)
 
     # La firma excluye la línea del sello de hora, que cambia siempre y taparía
     # si cambió algo de verdad.
@@ -767,7 +774,8 @@ def _panel_al_dia(store, ahora):
     png = _grafico_ritmo(store,
                          [(lbl, ini, corte, tot)
                           for (lbl, ini, corte), tot in zip(ciclos, totales)],
-                         dias_ciclo, transcurridos, proyeccion)
+                         dias_ciclo, transcurridos, proyeccion,
+                         bloques=_bloques_panel(n))
     if png is None:
         return
 
