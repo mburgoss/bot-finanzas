@@ -685,17 +685,22 @@ def _bloques_panel(n: dict):
 
     Las dos arrancan por la misma fila a propósito: es el término que ambos
     totales comparten, y ponerlo primero deja ver de una que lo único que cambia
-    entre ellos es cómo entra el crédito."""
-    compartida = ("Débito + transf − ingresos", n["otros"], False)
+    entre ellos es cómo entra el crédito.
+    Las etiquetas son cortas por una razón de ancho, no de estilo: con montos de
+    siete dígitos, una etiqueta larga se monta encima del número. El matiz de que
+    el débito va NETO de ingresos lo aclara el caption, justo cuando hay ingresos
+    que descontar.
+    """
+    compartida = ("Débito y transf.", n["otros"], False)
     return [
         ("Lo que compraste (el gráfico)", [
             compartida,
-            ("Crédito comprado, completo", n["credito"], False),
+            ("Crédito comprado", n["credito"], False),
             ("Gastado hasta hoy", n["gastado"], True),
         ]),
         (f"Lo que te cobran el {config.BILLING_DAY}", [
             compartida,
-            ("Cuotas de este ciclo", n["cuotas"], False),
+            ("Cuotas del ciclo", n["cuotas"], False),
             ("Total mes", n["total_mes"], True),
         ]),
     ]

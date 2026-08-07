@@ -77,25 +77,25 @@ def _leyenda(ax, series, tema):
     Cumple dos funciones a la vez: identidad de cada serie por línea-clave (nunca
     color solo) y tabla de valores exactos."""
     actual = series[0]["valores"][-1]
-    alto = 0.075 * len(series) + 0.035
+    alto = 0.092 * len(series) + 0.035
 
     # Respaldo en color de fondo, por si una curva sube antes de lo esperado.
     ax.add_patch(FancyBboxPatch(
-        (0.005, 0.985 - alto), 0.55, alto,
+        (0.005, 0.985 - alto), 0.62, alto,
         boxstyle="round,pad=0.012,rounding_size=0.02",
         transform=ax.transAxes, facecolor=tema["fondo"], edgecolor="none",
         zorder=6, clip_on=False))
 
-    y = 0.95
+    y = 0.94
     for i, s in enumerate(series):
         principal = i == 0
-        ax.plot([0.03, 0.075], [y, y], transform=ax.transAxes,
-                color=tema["series"][i], linewidth=2.2 if principal else 1.6,
+        ax.plot([0.03, 0.080], [y, y], transform=ax.transAxes,
+                color=tema["series"][i], linewidth=2.6 if principal else 1.9,
                 solid_capstyle="round", zorder=7, clip_on=False)
-        ax.text(0.093, y, s["etiqueta"], transform=ax.transAxes, fontsize=8.5,
+        ax.text(0.100, y, s["etiqueta"], transform=ax.transAxes, fontsize=10.5,
                 color=tema["tinta"] if principal else tema["tinta2"],
                 va="center", ha="left", zorder=7)
-        ax.text(0.40, y, pesos(s["valores"][-1]), transform=ax.transAxes, fontsize=8.5,
+        ax.text(0.435, y, pesos(s["valores"][-1]), transform=ax.transAxes, fontsize=10.5,
                 color=tema["tinta"] if principal else tema["tinta2"],
                 fontweight="bold" if principal else "normal",
                 va="center", ha="right", zorder=7)
@@ -103,11 +103,11 @@ def _leyenda(ax, series, tema):
             d = delta_pct(actual, s["valores"][-1])
             # Gastar más que el ciclo de referencia es la dirección mala.
             # El signo menos va tipográfico (−), que el guión ASCII casi no se ve.
-            ax.text(0.425, y, f"{d:+d}%".replace("-", "−"),
-                    transform=ax.transAxes, fontsize=8.5,
+            ax.text(0.462, y, f"{d:+d}%".replace("-", "−"),
+                    transform=ax.transAxes, fontsize=10.5,
                     color=tema["sube"] if d > 0 else tema["baja"],
                     va="center", ha="left", zorder=7)
-        y -= 0.075
+        y -= 0.092
 
 
 def _pie_de_tablas(fig, bloques, t):
@@ -123,25 +123,28 @@ def _pie_de_tablas(fig, bloques, t):
     Cada monto se ancla a la derecha de su columna: la alineación no depende de
     una fuente monoespaciada.
     """
-    columnas = [(0.105, 0.505), (0.560, 0.975)]
-    fig.add_artist(Line2D([0.105, 0.975], [0.285, 0.285],
+    # Columnas al ras de los márgenes y con el pasillo justo: cada punto de ancho
+    # que se gana acá es un punto que la etiqueta no tiene que resignar cuando la
+    # letra crece.
+    columnas = [(0.100, 0.515), (0.545, 0.980)]
+    fig.add_artist(Line2D([0.100, 0.980], [0.300, 0.300],
                           color=t["grilla"], linewidth=0.8))
     for (x_izq, x_der), (titulo, filas) in zip(columnas, bloques):
-        fig.text(x_izq, 0.245, titulo.upper(), color=t["apagado"], fontsize=7.5,
+        fig.text(x_izq, 0.262, titulo.upper(), color=t["apagado"], fontsize=9,
                  fontweight="bold", va="top", ha="left")
-        y = 0.185
+        y = 0.198
         for etiqueta, monto, es_total in filas:
             peso = "bold" if es_total else "normal"
             color = t["tinta"] if es_total else t["tinta2"]
             if es_total:    # regla que cierra los sumandos, como en una suma escrita
-                fig.add_artist(Line2D([x_izq, x_der], [y + 0.032, y + 0.032],
+                fig.add_artist(Line2D([x_izq, x_der], [y + 0.030, y + 0.030],
                                       color=t["eje"], linewidth=0.8))
             texto = ("−" if monto < 0 else "") + f"${abs(int(monto)):,.0f}".replace(",", ".")
-            fig.text(x_izq, y, etiqueta, color=color, fontsize=9,
+            fig.text(x_izq, y, etiqueta, color=color, fontsize=10.5,
                      fontweight=peso, va="top", ha="left")
-            fig.text(x_der, y, texto, color=color, fontsize=9,
+            fig.text(x_der, y, texto, color=color, fontsize=10.5,
                      fontweight=peso, va="top", ha="right")
-            y -= 0.058
+            y -= 0.068
 
 
 def ritmo_de_gasto(series, dias_ciclo: int, subtitulo: str,
@@ -172,7 +175,7 @@ def ritmo_de_gasto(series, dias_ciclo: int, subtitulo: str,
         ax.spines[lado].set_visible(False)
     ax.spines["bottom"].set_color(t["eje"])
     ax.spines["bottom"].set_linewidth(0.8)
-    ax.tick_params(colors=t["apagado"], labelsize=8, length=0, pad=6)
+    ax.tick_params(colors=t["apagado"], labelsize=9.5, length=0, pad=6)
 
     # --- Series: el ciclo en curso manda por grosor y relleno, no por color ---
     for i, s in enumerate(series):
@@ -198,7 +201,7 @@ def ritmo_de_gasto(series, dias_ciclo: int, subtitulo: str,
         ax.annotate(f"proyección {pesos(proyeccion)}",
                     xy=(dias_ciclo, proyeccion), xytext=(-6, 9),
                     textcoords="offset points", ha="right", va="bottom",
-                    fontsize=7.5, color=t["apagado"], zorder=6)
+                    fontsize=9, color=t["apagado"], zorder=6)
 
     # Punto de hoy: anillo del color del fondo para que no se pise con la línea.
     ax.plot([dias_con_datos], [hoy_y], marker="o", markersize=7,
@@ -218,7 +221,7 @@ def ritmo_de_gasto(series, dias_ciclo: int, subtitulo: str,
 
     ticks = [1] + [d for d in range(5, dias_ciclo + 1, 5)]
     ax.set_xticks(ticks)
-    ax.set_xlabel("día del ciclo", fontsize=8, color=t["apagado"], labelpad=8)
+    ax.set_xlabel("día del ciclo", fontsize=9.5, color=t["apagado"], labelpad=8)
 
     _leyenda(ax, series, t)
 
@@ -226,9 +229,9 @@ def ritmo_de_gasto(series, dias_ciclo: int, subtitulo: str,
     if bloques:
         fig.subplots_adjust(left=0.105, right=0.975, top=0.855, bottom=0.40)
         fig.text(0.105, 0.968, "Ritmo de gasto", color=t["tinta"],
-                 fontsize=13.5, fontweight="bold", va="top", ha="left")
-        fig.text(0.105, 0.918, subtitulo, color=t["tinta2"],
-                 fontsize=9, va="top", ha="left")
+                 fontsize=16, fontweight="bold", va="top", ha="left")
+        fig.text(0.100, 0.918, subtitulo, color=t["tinta2"],
+                 fontsize=11, va="top", ha="left")
         _pie_de_tablas(fig, bloques, t)
         # Arriba de la línea divisoria: abajo choca con el total de la derecha.
         nota_y = 0.305
@@ -237,11 +240,11 @@ def ritmo_de_gasto(series, dias_ciclo: int, subtitulo: str,
         fig.text(0.105, 0.955, "Ritmo de gasto", color=t["tinta"],
                  fontsize=13.5, fontweight="bold", va="top", ha="left")
         fig.text(0.105, 0.885, subtitulo, color=t["tinta2"],
-                 fontsize=9, va="top", ha="left")
+                 fontsize=10, va="top", ha="left")
         nota_y = 0.028
     if len(series) > 1:
         fig.text(0.975, nota_y, "cada ciclo cortado al mismo día",
-                 color=t["apagado"], fontsize=7.5, va="bottom", ha="right")
+                 color=t["apagado"], fontsize=8.5, va="bottom", ha="right")
 
     buf = io.BytesIO()
     fig.savefig(buf, format="png", facecolor=t["fondo"])
