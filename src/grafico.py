@@ -77,25 +77,33 @@ def _leyenda(ax, series, tema):
     Cumple dos funciones a la vez: identidad de cada serie por línea-clave (nunca
     color solo) y tabla de valores exactos."""
     actual = series[0]["valores"][-1]
-    alto = 0.092 * len(series) + 0.035
+    # El gasto del ciclo en curso es LA cifra de la imagen: va en tamaño hero,
+    # más grande incluso que el título. Los ciclos anteriores quedan como tabla
+    # de comparación, chicos y parejos — la jerarquía la marca el tamaño.
+    PASO_HERO, PASO = 0.150, 0.085
+    alto = PASO_HERO + PASO * (len(series) - 1) + 0.035
 
     # Respaldo en color de fondo, por si una curva sube antes de lo esperado.
     ax.add_patch(FancyBboxPatch(
-        (0.005, 0.985 - alto), 0.62, alto,
+        (0.005, 0.985 - alto), 0.735, alto,
         boxstyle="round,pad=0.012,rounding_size=0.02",
         transform=ax.transAxes, facecolor=tema["fondo"], edgecolor="none",
         zorder=6, clip_on=False))
 
-    y = 0.94
+    y = 0.905
     for i, s in enumerate(series):
         principal = i == 0
         ax.plot([0.03, 0.080], [y, y], transform=ax.transAxes,
-                color=tema["series"][i], linewidth=2.6 if principal else 1.9,
+                color=tema["series"][i], linewidth=3.0 if principal else 1.9,
                 solid_capstyle="round", zorder=7, clip_on=False)
-        ax.text(0.100, y, s["etiqueta"], transform=ax.transAxes, fontsize=10.5,
+        ax.text(0.100, y, s["etiqueta"], transform=ax.transAxes,
+                fontsize=12 if principal else 10.5,
                 color=tema["tinta"] if principal else tema["tinta2"],
                 va="center", ha="left", zorder=7)
-        ax.text(0.435, y, pesos(s["valores"][-1]), transform=ax.transAxes, fontsize=10.5,
+        # Todos los montos comparten el borde derecho: el hero manda por tamaño,
+        # no por posición, y la columna sigue leyéndose como columna.
+        ax.text(0.600, y, pesos(s["valores"][-1]), transform=ax.transAxes,
+                fontsize=22 if principal else 10.5,
                 color=tema["tinta"] if principal else tema["tinta2"],
                 fontweight="bold" if principal else "normal",
                 va="center", ha="right", zorder=7)
@@ -103,11 +111,11 @@ def _leyenda(ax, series, tema):
             d = delta_pct(actual, s["valores"][-1])
             # Gastar más que el ciclo de referencia es la dirección mala.
             # El signo menos va tipográfico (−), que el guión ASCII casi no se ve.
-            ax.text(0.462, y, f"{d:+d}%".replace("-", "−"),
+            ax.text(0.625, y, f"{d:+d}%".replace("-", "−"),
                     transform=ax.transAxes, fontsize=10.5,
                     color=tema["sube"] if d > 0 else tema["baja"],
                     va="center", ha="left", zorder=7)
-        y -= 0.092
+        y -= PASO_HERO if principal else PASO
 
 
 def _pie_de_tablas(fig, bloques, t, nota=None):
@@ -203,7 +211,9 @@ def ritmo_de_gasto(series, dias_ciclo: int, subtitulo: str,
         ax.plot([dias_ciclo], [proyeccion], marker="o", markersize=5,
                 markerfacecolor=t["fondo"], markeredgecolor=t["series"][0],
                 markeredgewidth=1.4, zorder=6)
-        ax.annotate(f"proyección {pesos(proyeccion)}",
+        # "proy." y no "proyección": con la leyenda más ancha por la cifra hero,
+        # el texto largo quedaba tapado por el respaldo de la leyenda.
+        ax.annotate(f"proy. {pesos(proyeccion)}",
                     xy=(dias_ciclo, proyeccion), xytext=(-6, 9),
                     textcoords="offset points", ha="right", va="bottom",
                     fontsize=9, color=t["apagado"], zorder=6)
