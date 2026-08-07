@@ -80,7 +80,7 @@ def _leyenda(ax, series, tema):
     # El gasto del ciclo en curso es LA cifra de la imagen: va en tamaño hero,
     # más grande incluso que el título. Los ciclos anteriores quedan como tabla
     # de comparación, chicos y parejos — la jerarquía la marca el tamaño.
-    PASO_HERO, PASO = 0.150, 0.085
+    PASO_HERO, PASO = 0.120, 0.085
     alto = PASO_HERO + PASO * (len(series) - 1) + 0.035
 
     # Respaldo en color de fondo, por si una curva sube antes de lo esperado.
@@ -97,13 +97,13 @@ def _leyenda(ax, series, tema):
                 color=tema["series"][i], linewidth=3.0 if principal else 1.9,
                 solid_capstyle="round", zorder=7, clip_on=False)
         ax.text(0.100, y, s["etiqueta"], transform=ax.transAxes,
-                fontsize=12 if principal else 10.5,
+                fontsize=11.5 if principal else 10.5,
                 color=tema["tinta"] if principal else tema["tinta2"],
                 va="center", ha="left", zorder=7)
         # Todos los montos comparten el borde derecho: el hero manda por tamaño,
         # no por posición, y la columna sigue leyéndose como columna.
         ax.text(0.600, y, pesos(s["valores"][-1]), transform=ax.transAxes,
-                fontsize=22 if principal else 10.5,
+                fontsize=17 if principal else 10.5,
                 color=tema["tinta"] if principal else tema["tinta2"],
                 fontweight="bold" if principal else "normal",
                 va="center", ha="right", zorder=7)
