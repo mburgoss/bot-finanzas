@@ -45,6 +45,7 @@ jobs:
           # sin forzar. Solo cambian cuando se ejecuta a mano desde Actions.
           GRAFICO_TEMA: ${{ inputs.tema || 'claro' }}
           FORZAR_RESUMEN: ${{ inputs.forzar_resumen }}
+          PANEL_MINUTOS: "15"          # solo refresca el sello de hora; los cambios salen al toque
           GMAIL_USER: ${{ secrets.GMAIL_USER }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
           BANK_SENDERS: ${{ secrets.BANK_SENDERS }}

@@ -8,6 +8,7 @@ Flujo:
   3. Regenera el resumen por ciclo y el gasto por categoría.
 """
 
+import hashlib
 import re
 import time
 from datetime import date, datetime, timedelta
@@ -714,7 +715,7 @@ def _caption_panel(store, ahora, ciclos, dias_ciclo, transcurridos):
     return "\n".join(lineas)
 
 
-def _panel_al_dia(store, ahora, hubo_cambios: bool):
+def _panel_al_dia(store, ahora):
     """Mantiene UN mensaje fijado en el chat con el gráfico del ciclo al día.
 
     En vez de mandar una foto nueva cada vez (que se entierra en el historial),
@@ -722,31 +723,45 @@ def _panel_al_dia(store, ahora, hubo_cambios: bool):
     actualizado. Editar no genera notificación, así que refrescarlo no molesta.
     El id vive en la hoja Config ('panel_message_id').
 
-    Solo se refresca si hubo un movimiento nuevo o si pasaron PANEL_MINUTOS:
-    regenerar la imagen en cada corrida (una por minuto) sería puro gasto.
+    Se refresca en cuanto CAMBIA algo. El disparador es una firma del contenido,
+    no el reloj: si los números son los mismos que la última vez, no se toca. Así
+    el bot puede correr cada minuto y el panel reacciona en menos de un minuto a
+    un movimiento nuevo, a una anulación o a un cambio de cuotas, sin regenerar
+    y subir la imagen 1.440 veces al día para mover un sello de hora.
+
+    PANEL_MINUTOS pasa a ser solo eso: cada cuánto refrescar el "Actualizado"
+    cuando no cambió nada, para que el panel no parezca muerto.
     """
     if not config.PANEL_ACTIVO:
         return
+
+    hoy = ahora.date()
+    dias_ciclo, transcurridos, ciclos = _ventanas_de_ciclo(hoy)
+    # El caption es barato (el Store cachea la planilla); la imagen no. Por eso
+    # se arma primero y se decide con él si vale la pena dibujar.
+    caption = _caption_panel(store, ahora, ciclos, dias_ciclo, transcurridos)
+
+    # La firma excluye la línea del sello de hora, que cambia siempre y taparía
+    # si cambió algo de verdad.
+    cuerpo = "\n".join(l for l in caption.split("\n") if not l.startswith("<i>Actualizado"))
+    firma = hashlib.sha1(cuerpo.encode("utf-8")).hexdigest()[:16]
 
     # La marca se guarda naive: entre corridas puede faltar tzdata y mezclar
     # aware con naive haría reventar la resta.
     ahora_naive = ahora.replace(tzinfo=None)
     # str() a propósito: la hoja puede devolver el valor como número o como
     # fecha ya interpretada, no siempre como el texto que se guardó.
-    ultimo = str(store.get_config("panel_actualizado", "") or "")
-    if not hubo_cambios and ultimo:
+    if firma == str(store.get_config("panel_firma", "") or ""):
+        ultimo = str(store.get_config("panel_actualizado", "") or "")
         try:
             minutos = (ahora_naive - datetime.fromisoformat(ultimo)).total_seconds() / 60
             if 0 <= minutos < config.PANEL_MINUTOS:
-                return
+                return      # mismos números y el sello todavía es fresco
         except (ValueError, TypeError):
-            pass    # marca ilegible: se regenera y se reescribe
+            pass            # marca ilegible: se regenera y se reescribe
 
-    hoy = ahora.date()
-    dias_ciclo, transcurridos, ciclos = _ventanas_de_ciclo(hoy)
     totales = [store.gasto_neto_por_fecha(ini, corte)[0] for _lbl, ini, corte in ciclos]
     total_act = totales[0]
-
     proyeccion = (total_act * dias_ciclo // (transcurridos + 1)
                   if total_act > 0 and 3 <= transcurridos < dias_ciclo - 1 else None)
     png = _grafico_ritmo(store,
@@ -756,8 +771,7 @@ def _panel_al_dia(store, ahora, hubo_cambios: bool):
     if png is None:
         return
 
-    caption = _caption_panel(store, ahora, ciclos, dias_ciclo, transcurridos)
-
+    store.set_config("panel_firma", firma)
     mid = str(store.get_config("panel_message_id", "") or "").strip()
     if mid.isdigit() and telegram_bot.editar_foto(int(mid), png, caption):
         store.set_config("panel_actualizado", ahora_naive.isoformat(timespec="seconds"))
@@ -830,7 +844,7 @@ def main():
             print(f"[aviso] no pude regenerar las hojas ahora: {e}")
     _quizas_resumen_nocturno(store)
     try:
-        _panel_al_dia(store, _ahora_local(), hubo_cambios=bool(nuevos))
+        _panel_al_dia(store, _ahora_local())
     except Exception as e:
         # El panel es un extra: si falla, no puede tumbar la corrida que ya
         # registró los movimientos.

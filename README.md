@@ -105,9 +105,17 @@ La **deuda total tarjeta** es la suma de todas las cuotas todavía no facturadas
 —de este ciclo y de los que vienen—. Es un saldo, no un flujo del mes: no se puede
 deducir de ninguno de los otros números.
 
-Se refresca cuando entra un movimiento nuevo, y si no pasa nada, cada `PANEL_MINUTOS`
-(por defecto 30). El id del mensaje vive en la hoja `Config` (`panel_message_id`):
-si lo borrás del chat, la próxima corrida crea uno nuevo y lo vuelve a fijar.
+**Se refresca en cuanto cambia algo**, no cada tanto. El disparador es una firma
+del contenido, no el reloj: si los números son los mismos que la última vez, no se
+toca. Como el bot corre cada minuto, un movimiento nuevo, una anulación o un cambio
+de cuotas aparecen en **menos de un minuto**; y cuando no pasa nada, no se regenera
+ni se sube la imagen al pedo.
+
+`PANEL_MINUTOS` (15) ya no gobierna eso: es solo cada cuánto refrescar el sello
+"Actualizado" para que el panel no parezca muerto en un día sin movimientos.
+
+El id del mensaje vive en la hoja `Config` (`panel_message_id`): si lo borrás del
+chat, la próxima corrida crea uno nuevo y lo vuelve a fijar.
 
 Se apaga con `PANEL_ACTIVO=0`.
 
