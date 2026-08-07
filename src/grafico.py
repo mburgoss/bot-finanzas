@@ -110,7 +110,7 @@ def _leyenda(ax, series, tema):
         y -= 0.092
 
 
-def _pie_de_tablas(fig, bloques, t):
+def _pie_de_tablas(fig, bloques, t, nota=None):
     """Dibuja las tablas al pie de la imagen, en dos columnas.
 
     Van acá y no en el caption de Telegram por una razón concreta: el bloque
@@ -127,12 +127,12 @@ def _pie_de_tablas(fig, bloques, t):
     # que se gana acá es un punto que la etiqueta no tiene que resignar cuando la
     # letra crece.
     columnas = [(0.100, 0.515), (0.545, 0.980)]
-    fig.add_artist(Line2D([0.100, 0.980], [0.300, 0.300],
+    fig.add_artist(Line2D([0.100, 0.980], [0.315, 0.315],
                           color=t["grilla"], linewidth=0.8))
     for (x_izq, x_der), (titulo, filas) in zip(columnas, bloques):
-        fig.text(x_izq, 0.262, titulo.upper(), color=t["apagado"], fontsize=9,
+        fig.text(x_izq, 0.278, titulo.upper(), color=t["apagado"], fontsize=9,
                  fontweight="bold", va="top", ha="left")
-        y = 0.198
+        y = 0.215
         for etiqueta, monto, es_total in filas:
             peso = "bold" if es_total else "normal"
             color = t["tinta"] if es_total else t["tinta2"]
@@ -144,12 +144,17 @@ def _pie_de_tablas(fig, bloques, t):
                      fontweight=peso, va="top", ha="left")
             fig.text(x_der, y, texto, color=color, fontsize=10.5,
                      fontweight=peso, va="top", ha="right")
-            y -= 0.068
+            y -= 0.065
+    if nota:
+        # Al pie de la columna izquierda: aclara que "Débito y transf." va neto,
+        # matiz que se perdió al acortar las etiquetas para agrandar la letra.
+        fig.text(columnas[0][0], 0.020, nota, color=t["apagado"], fontsize=8.5,
+                 va="bottom", ha="left")
 
 
 def ritmo_de_gasto(series, dias_ciclo: int, subtitulo: str,
                    proyeccion: int | None = None, tema: str = "claro",
-                   bloques=None) -> bytes:
+                   bloques=None, nota=None) -> bytes:
     """Devuelve el PNG (bytes) del gráfico de ritmo de gasto.
 
     `series` es una lista de {"etiqueta": str, "valores": [acumulado por día]},
@@ -227,14 +232,14 @@ def ritmo_de_gasto(series, dias_ciclo: int, subtitulo: str,
 
     # --- Encabezado, tablas y nota al pie, fuera del área de trazado ---
     if bloques:
-        fig.subplots_adjust(left=0.105, right=0.975, top=0.855, bottom=0.40)
+        fig.subplots_adjust(left=0.105, right=0.975, top=0.855, bottom=0.42)
         fig.text(0.105, 0.968, "Ritmo de gasto", color=t["tinta"],
                  fontsize=16, fontweight="bold", va="top", ha="left")
         fig.text(0.100, 0.918, subtitulo, color=t["tinta2"],
                  fontsize=11, va="top", ha="left")
-        _pie_de_tablas(fig, bloques, t)
+        _pie_de_tablas(fig, bloques, t, nota)
         # Arriba de la línea divisoria: abajo choca con el total de la derecha.
-        nota_y = 0.305
+        nota_y = 0.322
     else:
         fig.subplots_adjust(left=0.105, right=0.975, top=0.80, bottom=0.145)
         fig.text(0.105, 0.955, "Ritmo de gasto", color=t["tinta"],

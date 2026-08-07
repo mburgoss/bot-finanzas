@@ -507,7 +507,7 @@ def _barras(items, ancho: int = 10):
 
 
 def _grafico_ritmo(store, ciclos, dias_ciclo: int, transcurridos: int,
-                   proyeccion: int | None, bloques=None):
+                   proyeccion: int | None, bloques=None, nota=None):
     """PNG del gasto acumulado del ciclo vs los anteriores, o None si no se pudo.
 
     `ciclos` es [(etiqueta, inicio, corte, total)] con el ciclo en curso primero.
@@ -531,7 +531,8 @@ def _grafico_ritmo(store, ciclos, dias_ciclo: int, transcurridos: int,
         return grafico.ritmo_de_gasto(
             series, dias_ciclo,
             f"Ciclo {ciclos[0][0]} · día {dias} de {dias_ciclo}",
-            proyeccion=proyeccion, tema=config.GRAFICO_TEMA, bloques=bloques)
+            proyeccion=proyeccion, tema=config.GRAFICO_TEMA, bloques=bloques,
+            nota=nota)
     except Exception as e:
         print(f"[aviso] no pude generar el gráfico del resumen: {e}")
         return None
@@ -706,18 +707,17 @@ def _bloques_panel(n: dict):
     ]
 
 
-def _caption_panel(ahora, ciclos, dias_ciclo, transcurridos, n: dict) -> str:
-    """Texto del panel. Corto a propósito: el desglose vive en la imagen, donde
-    las columnas no dependen del ancho de la pantalla. Acá quedan solo los dos
-    totales y la deuda, en líneas que envuelven sin romper nada."""
-    ciclo_lbl = ciclos[0][0]
-    lineas = [f"<b>Ciclo {ciclo_lbl}</b> · día {transcurridos + 1} de {dias_ciclo}",
-              f"Gastado hasta hoy: <b>{_pesos(n['gastado'])}</b>",
-              f"Total mes (lo que te cobran el {config.BILLING_DAY}): "
-              f"<b>{_pesos(n['total_mes'])}</b>"]
-    if n["ingresos"]:
-        lineas.append(f"<i>Del gastado ya se descontaron "
-                      f"{_pesos(abs(n['ingresos']))} de ingresos.</i>")
+def _caption_panel(ahora, n: dict) -> str:
+    """Texto del panel: SOLO lo que la imagen no muestra.
+
+    El ciclo, el gastado y el total ya están dibujados arriba; repetirlos acá
+    era ruido. Queda la deuda —que no aparece en ninguna tabla porque es un
+    saldo, no un flujo del mes— y el sello de hora.
+
+    La deuda va primera a propósito: la barra de "Mensaje fijado" arriba del
+    chat muestra la primera línea del caption, así que ese es el número que se
+    ve sin abrir nada."""
+    lineas = []
     if n["deuda"]:
         plural = "ciclo" if n["por_delante"] == 1 else "ciclos"
         lineas.append(f"Deuda total tarjeta: <b>{_pesos(n['deuda'])}</b> "
@@ -751,11 +751,12 @@ def _panel_al_dia(store, ahora):
     # Los números son baratos (el Store cachea la planilla); la imagen no. Por
     # eso se calculan primero y con ellos se decide si vale la pena dibujar.
     n = _numeros_del_ciclo(store, ciclos)
-    caption = _caption_panel(ahora, ciclos, dias_ciclo, transcurridos, n)
+    caption = _caption_panel(ahora, n)
 
-    # La firma excluye la línea del sello de hora, que cambia siempre y taparía
-    # si cambió algo de verdad.
-    cuerpo = "\n".join(l for l in caption.split("\n") if not l.startswith("<i>Actualizado"))
+    # La firma sale de los NÚMEROS, no del caption: desde que el caption dejó de
+    # repetir los totales, firmarlo habría dejado ciego al panel ante un cambio
+    # en el gasto. Incluye el día del ciclo porque la curva avanza con él.
+    cuerpo = repr(sorted(n.items())) + f"|{transcurridos}|{dias_ciclo}"
     firma = hashlib.sha1(cuerpo.encode("utf-8")).hexdigest()[:16]
 
     # La marca se guarda naive: entre corridas puede faltar tzdata y mezclar
@@ -780,7 +781,9 @@ def _panel_al_dia(store, ahora):
                          [(lbl, ini, corte, tot)
                           for (lbl, ini, corte), tot in zip(ciclos, totales)],
                          dias_ciclo, transcurridos, proyeccion,
-                         bloques=_bloques_panel(n))
+                         bloques=_bloques_panel(n),
+                         nota=(f"«Débito y transf.» va neto de {_pesos(abs(n['ingresos']))} "
+                               f"de ingresos recibidos" if n["ingresos"] else None))
     if png is None:
         return
 

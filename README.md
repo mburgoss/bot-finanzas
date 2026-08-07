@@ -82,8 +82,13 @@ de Telegram **se envuelve en pantallas angostas** —en un iPhone parte cada fil
 dos y la tabla deja de leerse como tabla—. Dentro de la imagen el ancho lo fijamos
 nosotros, así que las columnas aguantan en cualquier teléfono.
 
-El caption queda corto, con los dos totales y la deuda en líneas sueltas que
-envuelven sin romper nada.
+El caption **solo lleva lo que la imagen no muestra**: la deuda total y el sello de
+hora. Repetir ahí el ciclo, el gastado y el total era ruido.
+
+La deuda va primera a propósito: **la barra de "Mensaje fijado" arriba del chat
+muestra la primera línea del caption**, así que ese es el número que ves sin abrir
+nada — y es justamente el que no aparece en ninguna tabla, porque es un saldo y no
+un flujo del mes.
 
 ```
 LO QUE COMPRASTE  (el gráfico)          LO QUE TE COBRAN EL 22
