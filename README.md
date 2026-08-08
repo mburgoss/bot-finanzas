@@ -136,18 +136,25 @@ Se apaga con `PANEL_ACTIVO=0`.
 > pueden leerse. El día que haga falta navegar historial o filtrar, ahí sí conviene
 > una web — hoy no.
 
-### 🌙 Resumen nocturno automático
-Cada noche (por defecto a las **22:00**, hora `TIMEZONE`) el bot te manda una **imagen**
-con el texto del resumen debajo:
-- El **gráfico de ritmo de gasto**: el gasto acumulado día a día del ciclo actual contra
-  **los dos ciclos anteriores a la misma altura** (mismos días transcurridos), con el
-  monto y la diferencia en % de cada uno, y la **proyección de cierre** punteada.
-- Las **categorías que más crecieron** respecto al ciclo pasado, en barras de texto.
-- La **proyección**: si seguís a este ritmo, cuánto terminarías gastando, y un aviso
-  si vas camino a superar tu **promedio** de los últimos ciclos.
+Al pie va una **dona con la estructura de gasto por categoría** y el total gastado
+en el centro. Se muestran las 5 categorías más grandes y el resto se junta en
+"Otras": pasados unos seis sectores, los más chicos dejan de distinguirse. Los seis
+colores están validados para daltonismo (peor par vecino: ΔE 9,1 en protanopía).
 
-Cada dato aparece una sola vez (la comparación de ciclos vive en el gráfico y los
-drivers por categoría en las barras de texto, no se repiten).
+Las porciones son **gasto**, no ingresos: en una dona no se puede dibujar un sector
+negativo, así que un ingreso no aparece como categoría.
+
+### 🌙 Resumen nocturno automático
+Cada noche (por defecto a las **22:00**, hora `TIMEZONE`) el bot te manda **la misma
+imagen del panel fijado** —curva, tablas y dona— con el texto del resumen debajo.
+Una sola función arma esa imagen, así que las dos no pueden divergir.
+
+El texto solo lleva lo que la imagen **no** dice:
+- Las **categorías que más crecieron** respecto al ciclo pasado, en barras de texto.
+  La dona muestra en qué se fue la plata *este* ciclo; esto muestra qué *cambió*.
+- La **proyección** vs tu **promedio** de los últimos ciclos.
+
+Cada dato aparece una sola vez.
 
 El ritmo se mide por **fecha de compra** (monto completo el día que compraste), para poder
 comparar ciclos día a día. Se envía una sola vez por día. La hora se ajusta con el secret

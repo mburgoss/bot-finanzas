@@ -35,12 +35,17 @@ TEMAS = {
         "fondo": "#fcfcfb", "tinta": "#0b0b0b", "tinta2": "#52514e",
         "apagado": "#898781", "grilla": "#e1e0d9", "eje": "#c3c2b7",
         "series": ("#2a78d6", "#eb6834", "#1baf7a"),
+        # Seis slots para la dona de categorías. Validados en el orden en que se
+        # dibujan: el peor par vecino da ΔE 9.1 en protanopía y 19.6 en visión
+        # normal, sobre los pisos de 8 y 15.
+        "categorias": ("#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300"),
         "baja": "#006300", "sube": "#d03b3b",
     },
     "oscuro": {
         "fondo": "#1a1a19", "tinta": "#ffffff", "tinta2": "#c3c2b7",
         "apagado": "#898781", "grilla": "#2c2c2a", "eje": "#383835",
         "series": ("#3987e5", "#d95926", "#199e70"),
+        "categorias": ("#3987e5", "#d95926", "#199e70", "#c98500", "#d55181", "#008300"),
         "baja": "#0ca30c", "sube": "#d03b3b",
     },
 }
@@ -118,7 +123,62 @@ def _leyenda(ax, series, tema):
         y -= PASO_HERO if principal else PASO
 
 
-def _pie_de_tablas(fig, bloques, t, nota=None):
+def _torta(fig, torta, t, banda):
+    """Dona de estructura de gasto por categoría, con el total en el centro.
+
+    Dona y no torta maciza: el agujero es justamente donde va el total, que es
+    el dato que más se mira. Quien llama ya agrupó la cola en "Otras" — pasados
+    unos seis sectores los más chicos dejan de distinguirse entre sí.
+
+    `banda` = (y_abajo, y_arriba) en fracción de figura. La dona va a la
+    izquierda y la lista de categorías a la derecha: los nombres y montos son la
+    forma dependable de identificar cada sector (y el respaldo que exige el
+    aqua, que en fondo claro queda bajo 3:1 de contraste).
+    """
+    y0, y1 = banda
+    alto = y1 - y0
+    porciones = torta["porciones"]
+    total = sum(m for _c, m in porciones) or 1
+
+    fig.add_artist(Line2D([0.100, 0.980], [y1, y1], color=t["grilla"], linewidth=0.8))
+    fig.text(0.100, y1 - alto * 0.10, "EN QUÉ SE FUE", color=t["apagado"],
+             fontsize=9, fontweight="bold", va="top", ha="left")
+
+    # --- La dona ---
+    ax = fig.add_axes([0.100, y0 + alto * 0.06, 0.30, alto * 0.72])
+    ax.set_facecolor(t["fondo"])
+    ax.set_axis_off()
+    ax.pie([m for _c, m in porciones],
+           colors=[t["categorias"][i % len(t["categorias"])]
+                   for i in range(len(porciones))],
+           startangle=90, counterclock=False,
+           # El borde del color del fondo es el separador entre sectores: 2px de
+           # aire, no una línea de contorno que agregaría tinta que no es dato.
+           wedgeprops=dict(width=0.30, edgecolor=t["fondo"], linewidth=2))
+    # El agujero manda sobre el tamaño del número: si no entra, no sirve.
+    ax.text(0, 0.13, pesos(torta["total"]), ha="center", va="center",
+            fontsize=11.5, fontweight="bold", color=t["tinta"])
+    ax.text(0, -0.20, "gastado", ha="center", va="center",
+            fontsize=8.5, color=t["apagado"])
+
+    # --- La lista, a la derecha ---
+    x_punto, x_nombre, x_monto, x_pct = 0.455, 0.485, 0.860, 0.980
+    paso = alto * 0.115
+    y = y1 - alto * 0.30
+    for i, (categoria, monto) in enumerate(porciones):
+        color = t["categorias"][i % len(t["categorias"])]
+        fig.add_artist(Line2D([x_punto], [y], marker="o", markersize=7,
+                              color=color, linestyle="none"))
+        fig.text(x_nombre, y, categoria, color=t["tinta2"], fontsize=10,
+                 va="center", ha="left")
+        fig.text(x_monto, y, pesos(monto), color=t["tinta2"], fontsize=10,
+                 va="center", ha="right")
+        fig.text(x_pct, y, f"{round(monto * 100 / total)}%", color=t["apagado"],
+                 fontsize=10, va="center", ha="right")
+        y -= paso
+
+
+def _pie_de_tablas(fig, bloques, t, banda, nota=None):
     """Dibuja las tablas al pie de la imagen, en dos columnas.
 
     Van acá y no en el caption de Telegram por una razón concreta: el bloque
@@ -129,55 +189,67 @@ def _pie_de_tablas(fig, bloques, t, nota=None):
 
     `bloques` = [(titulo, [(etiqueta, monto, es_total), ...]), ...], máximo dos.
     Cada monto se ancla a la derecha de su columna: la alineación no depende de
-    una fuente monoespaciada.
+    una fuente monoespaciada. `banda` = (y_abajo, y_arriba) en fracción de figura.
     """
+    y0, y1 = banda
+    alto = y1 - y0
     # Columnas al ras de los márgenes y con el pasillo justo: cada punto de ancho
     # que se gana acá es un punto que la etiqueta no tiene que resignar cuando la
     # letra crece.
     columnas = [(0.100, 0.515), (0.545, 0.980)]
-    fig.add_artist(Line2D([0.100, 0.980], [0.315, 0.315],
-                          color=t["grilla"], linewidth=0.8))
+    fig.add_artist(Line2D([0.100, 0.980], [y1, y1], color=t["grilla"], linewidth=0.8))
+    paso = alto * 0.235
     for (x_izq, x_der), (titulo, filas) in zip(columnas, bloques):
-        fig.text(x_izq, 0.278, titulo.upper(), color=t["apagado"], fontsize=9,
-                 fontweight="bold", va="top", ha="left")
-        y = 0.215
+        fig.text(x_izq, y1 - alto * 0.10, titulo.upper(), color=t["apagado"],
+                 fontsize=9, fontweight="bold", va="top", ha="left")
+        y = y1 - alto * 0.32
         for etiqueta, monto, es_total in filas:
             peso = "bold" if es_total else "normal"
             color = t["tinta"] if es_total else t["tinta2"]
             if es_total:    # regla que cierra los sumandos, como en una suma escrita
-                fig.add_artist(Line2D([x_izq, x_der], [y + 0.030, y + 0.030],
+                fig.add_artist(Line2D([x_izq, x_der], [y + alto * 0.105] * 2,
                                       color=t["eje"], linewidth=0.8))
             texto = ("−" if monto < 0 else "") + f"${abs(int(monto)):,.0f}".replace(",", ".")
             fig.text(x_izq, y, etiqueta, color=color, fontsize=10.5,
                      fontweight=peso, va="top", ha="left")
             fig.text(x_der, y, texto, color=color, fontsize=10.5,
                      fontweight=peso, va="top", ha="right")
-            y -= 0.065
+            y -= paso
     if nota:
         # Al pie de la columna izquierda: aclara que "Débito y transf." va neto,
         # matiz que se perdió al acortar las etiquetas para agrandar la letra.
-        fig.text(columnas[0][0], 0.020, nota, color=t["apagado"], fontsize=8.5,
-                 va="bottom", ha="left")
+        fig.text(columnas[0][0], y0 + alto * 0.04, nota, color=t["apagado"],
+                 fontsize=8.5, va="bottom", ha="left")
 
 
 def ritmo_de_gasto(series, dias_ciclo: int, subtitulo: str,
                    proyeccion: int | None = None, tema: str = "claro",
-                   bloques=None, nota=None) -> bytes:
+                   bloques=None, nota=None, torta=None) -> bytes:
     """Devuelve el PNG (bytes) del gráfico de ritmo de gasto.
 
     `series` es una lista de {"etiqueta": str, "valores": [acumulado por día]},
     con el ciclo en curso primero y todas del mismo largo (hasta hoy).
     `proyeccion` es el cierre estimado del ciclo; si viene, se dibuja punteada
-    desde hoy hasta el final del ciclo.
+    desde hoy hasta el final del ciclo. `bloques` y `torta` son las secciones
+    opcionales del pie; cada una agranda la imagen en vez de apretar la curva.
     """
     t = TEMAS.get(tema, TEMAS["claro"])
     dias_con_datos = len(series[0]["valores"])
     x = list(range(1, dias_con_datos + 1))
 
+    # --- Alto en PULGADAS, no en fracciones ---
+    # Cada sección declara su alto y las bandas se derivan. Con fracciones fijas,
+    # agregar una sección obligaba a re-tocar a mano cada coordenada de las
+    # demás; así el layout se reacomoda solo.
+    H_ENCABEZADO, H_CURVA, H_EJEX = 0.95, 2.75, 0.55
+    H_TABLAS = 1.90 if bloques else 0.0
+    H_TORTA = 2.20 if torta else 0.0
+    alto = H_ENCABEZADO + H_CURVA + H_EJEX + H_TABLAS + H_TORTA
+    def f(pulgadas):                    # pulgadas -> fracción de figura
+        return pulgadas / alto
+
     plt.rcParams["font.family"] = "DejaVu Sans"
-    # Con tablas al pie la imagen crece: el gráfico conserva su alto y las
-    # tablas se llevan el espacio nuevo, no se lo quitan a la curva.
-    fig, ax = plt.subplots(figsize=(6.4, 5.5 if bloques else 4.0), dpi=190)
+    fig, ax = plt.subplots(figsize=(6.4, alto), dpi=190)
     fig.patch.set_facecolor(t["fondo"])
     ax.set_facecolor(t["fondo"])
 
@@ -238,25 +310,22 @@ def ritmo_de_gasto(series, dias_ciclo: int, subtitulo: str,
 
     _leyenda(ax, series, t)
 
-    # --- Encabezado, tablas y nota al pie, fuera del área de trazado ---
+    # --- Encabezado y secciones del pie, fuera del área de trazado ---
+    y_tablas = f(H_TORTA)                        # tope de la torta / piso tablas
+    y_curva = f(H_TORTA + H_TABLAS)              # piso del área de tablas
+    fig.subplots_adjust(left=0.105, right=0.975,
+                        top=1 - f(H_ENCABEZADO), bottom=y_curva + f(H_EJEX))
+    fig.text(0.105, 1 - f(0.18), "Ritmo de gasto", color=t["tinta"],
+             fontsize=16, fontweight="bold", va="top", ha="left")
+    fig.text(0.100, 1 - f(0.50), subtitulo, color=t["tinta2"],
+             fontsize=11, va="top", ha="left")
     if bloques:
-        fig.subplots_adjust(left=0.105, right=0.975, top=0.855, bottom=0.42)
-        fig.text(0.105, 0.968, "Ritmo de gasto", color=t["tinta"],
-                 fontsize=16, fontweight="bold", va="top", ha="left")
-        fig.text(0.100, 0.918, subtitulo, color=t["tinta2"],
-                 fontsize=11, va="top", ha="left")
-        _pie_de_tablas(fig, bloques, t, nota)
-        # Arriba de la línea divisoria: abajo choca con el total de la derecha.
-        nota_y = 0.322
-    else:
-        fig.subplots_adjust(left=0.105, right=0.975, top=0.80, bottom=0.145)
-        fig.text(0.105, 0.955, "Ritmo de gasto", color=t["tinta"],
-                 fontsize=13.5, fontweight="bold", va="top", ha="left")
-        fig.text(0.105, 0.885, subtitulo, color=t["tinta2"],
-                 fontsize=10, va="top", ha="left")
-        nota_y = 0.028
+        _pie_de_tablas(fig, bloques, t, (y_tablas, y_curva), nota)
+    if torta:
+        _torta(fig, torta, t, (0.0, y_tablas))
     if len(series) > 1:
-        fig.text(0.975, nota_y, "cada ciclo cortado al mismo día",
+        # Arriba de la primera divisoria: abajo chocaría con el total derecho.
+        fig.text(0.975, y_curva + f(0.06), "cada ciclo cortado al mismo día",
                  color=t["apagado"], fontsize=8.5, va="bottom", ha="right")
 
     buf = io.BytesIO()

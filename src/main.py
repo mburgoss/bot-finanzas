@@ -507,7 +507,7 @@ def _barras(items, ancho: int = 10):
 
 
 def _grafico_ritmo(store, ciclos, dias_ciclo: int, transcurridos: int,
-                   proyeccion: int | None, bloques=None, nota=None):
+                   proyeccion: int | None, bloques=None, nota=None, torta=None):
     """PNG del gasto acumulado del ciclo vs los anteriores, o None si no se pudo.
 
     `ciclos` es [(etiqueta, inicio, corte, total)] con el ciclo en curso primero.
@@ -532,7 +532,7 @@ def _grafico_ritmo(store, ciclos, dias_ciclo: int, transcurridos: int,
             series, dias_ciclo,
             f"Ciclo {ciclos[0][0]} · día {dias} de {dias_ciclo}",
             proyeccion=proyeccion, tema=config.GRAFICO_TEMA, bloques=bloques,
-            nota=nota)
+            nota=nota, torta=torta)
     except Exception as e:
         print(f"[aviso] no pude generar el gráfico del resumen: {e}")
         return None
@@ -587,26 +587,17 @@ def _resumen_nocturno(store, hoy: date):
     proyeccion = (total_act * dias_ciclo // (transcurridos + 1)
                   if total_act > 0 and 3 <= transcurridos < dias_ciclo - 1 else None)
 
-    png = _grafico_ritmo(store,
-                         [(ciclo_lbl, ini_act, hoy, total_act),
-                          (lbl_ant1, ini_ant1, corte_ant1, total_ant1),
-                          (lbl_ant2, ini_ant2, corte_ant2, total_ant2)],
-                         dias_ciclo, transcurridos, proyeccion)
+    # La MISMA imagen del panel fijado, con tablas y dona: una sola función la
+    # arma, así no pueden divergir.
+    n = _numeros_del_ciclo(store, ciclos)
+    png, _tot = _imagen_del_ciclo(store, ciclos, dias_ciclo, transcurridos, n)
 
     lineas = [f"<b>Resumen del día · {hoy.strftime('%d/%m/%Y')}</b>", ""]
-    lineas.append(f"<b>Ciclo {ciclo_lbl}</b> · día {transcurridos + 1} de {dias_ciclo}")
-    lineas.append(f"Gastado hasta hoy: <b>{_pesos(total_act)}</b>")
-
-    # 1) Comparación con los dos ciclos anteriores a la misma altura.
-    #    Si hay gráfico, él muestra las curvas y acá van solo los porcentajes;
-    #    si no, las barras de texto siguen contando la comparación.
-    partes = []
-    if total_ant1:
-        partes.append(f"{_delta_pct(total_act, total_ant1):+d}% vs {_mes_corto(lbl_ant1)}")
-    if total_ant2:
-        partes.append(f"{_delta_pct(total_act, total_ant2):+d}% vs {_mes_corto(lbl_ant2)}")
 
     if png is None:
+        # Sin imagen, el texto tiene que contar la comparación por su cuenta.
+        lineas.append(f"<b>Ciclo {ciclo_lbl}</b> · día {transcurridos + 1} de {dias_ciclo}")
+        lineas.append(f"Gastado hasta hoy: <b>{_pesos(total_act)}</b>")
         comp = [(_mes_corto(ciclo_lbl), total_act),
                 (_mes_corto(lbl_ant1), total_ant1),
                 (_mes_corto(lbl_ant2), total_ant2)]
@@ -615,11 +606,17 @@ def _resumen_nocturno(store, hoy: date):
             lineas.append("")
             lineas.append("<b>Comparación a esta altura</b>")
             lineas.append(barras_comp)
-    if partes:
-        lineas.append(" · ".join(partes) + " (a esta altura del ciclo)")
+        partes = []
+        if total_ant1:
+            partes.append(f"{_delta_pct(total_act, total_ant1):+d}% vs {_mes_corto(lbl_ant1)}")
+        if total_ant2:
+            partes.append(f"{_delta_pct(total_act, total_ant2):+d}% vs {_mes_corto(lbl_ant2)}")
+        if partes:
+            lineas.append(" · ".join(partes) + " (a esta altura del ciclo)")
 
-    # 2) Drivers: categorías que más crecieron vs el ciclo anterior -> BARRAS
-    #    (a nivel categoría, no repite la comparación de ciclos).
+    # 2) Drivers: categorías que más CRECIERON vs el ciclo anterior. Esto no lo
+    #    dice la imagen: la dona muestra en qué se fue la plata este ciclo, no
+    #    qué cambió respecto del anterior. Es lo propio del resumen nocturno.
     cats = set(cat_act) | set(cat_ant1)
     crecimiento = sorted(((c, cat_act.get(c, 0) - cat_ant1.get(c, 0)) for c in cats),
                          key=lambda x: -x[1])
@@ -638,7 +635,9 @@ def _resumen_nocturno(store, hoy: date):
         lineas.append(f"<b>Promedio de ciclos:</b> {_pesos(promedio)}")
         lineas.append(f"Estado: {estado}")
 
-    texto = "\n".join(lineas)
+    # Colapsa líneas en blanco de más: cuando hay imagen se saltean bloques
+    # enteros y quedaban dos vacías seguidas bajo el título.
+    texto = re.sub(r"\n{3,}", "\n\n", "\n".join(lineas)).strip()
     if png is None:
         telegram_bot.enviar(texto)
         return
@@ -667,6 +666,9 @@ def _tabla(filas) -> str:
     return "<pre>" + "\n".join(lineas) + "</pre>"
 
 
+MAX_PORCIONES = 5       # top N categorías; el resto se junta en "Otras"
+
+
 def _numeros_del_ciclo(store, ciclos) -> dict:
     """Todos los números del ciclo en una pasada, para que la imagen y el texto
     no puedan discrepar."""
@@ -678,7 +680,28 @@ def _numeros_del_ciclo(store, ciclos) -> dict:
     deuda, por_delante = store.deuda_de_tarjeta(ciclo_id)
     return {"otros": otros, "credito": g["credito"], "ingresos": g["ingreso"],
             "gastado": g["credito"] + otros, "cuotas": cuotas,
-            "total_mes": cuotas + otros, "deuda": deuda, "por_delante": por_delante}
+            "total_mes": cuotas + otros, "deuda": deuda, "por_delante": por_delante,
+            # Va en el dict para que entre también en la firma del panel: si
+            # clasificás un movimiento, la dona cambia y hay que redibujar.
+            "categorias": _porciones(store, ini_act, hoy)}
+
+
+def _porciones(store, desde, hasta):
+    """Gasto por categoría del período, de mayor a menor, con la cola agrupada
+    en "Otras". Devuelve una lista de tuplas (no dict) para que sea hasheable
+    en la firma del panel.
+
+    Solo entran los gastos: un ingreso no es una categoría de gasto y en una
+    dona no se puede dibujar un sector negativo. Por eso estas porciones suman
+    el gasto BRUTO, que es lo que va al centro de la dona — no el 'Gastado hasta
+    hoy', que va neto de ingresos."""
+    _total, por_cat = store.gasto_neto_por_fecha(desde, hasta)
+    positivas = sorted(((c, m) for c, m in por_cat.items() if m > 0),
+                       key=lambda x: -x[1])
+    if len(positivas) <= MAX_PORCIONES + 1:
+        return tuple(positivas)
+    cola = sum(m for _c, m in positivas[MAX_PORCIONES:])
+    return tuple(positivas[:MAX_PORCIONES]) + (("Otras", cola),)
 
 
 def _bloques_panel(n: dict):
@@ -724,6 +747,29 @@ def _caption_panel(ahora, n: dict) -> str:
                       f"({n['por_delante']} {plural} por delante)")
     lineas.append(f"<i>Actualizado {ahora.strftime('%d/%m %H:%M')}</i>")
     return "\n".join(lineas)
+
+
+def _imagen_del_ciclo(store, ciclos, dias_ciclo, transcurridos, n):
+    """La imagen completa del ciclo: curva, tablas y dona de categorías.
+
+    La arman igual el panel fijado y el resumen de las 22, para que sean
+    exactamente la misma imagen y no dos versiones que puedan divergir."""
+    totales = [store.gasto_neto_por_fecha(ini, corte)[0] for _lbl, ini, corte in ciclos]
+    total_act = totales[0]
+    proyeccion = (total_act * dias_ciclo // (transcurridos + 1)
+                  if total_act > 0 and 3 <= transcurridos < dias_ciclo - 1 else None)
+    porciones = n["categorias"]
+    torta = ({"total": sum(m for _c, m in porciones), "porciones": list(porciones)}
+             if porciones else None)
+    png = _grafico_ritmo(store,
+                         [(lbl, ini, corte, tot)
+                          for (lbl, ini, corte), tot in zip(ciclos, totales)],
+                         dias_ciclo, transcurridos, proyeccion,
+                         bloques=_bloques_panel(n),
+                         nota=(f"«Débito y transf.» va neto de {_pesos(abs(n['ingresos']))} "
+                               f"de ingresos recibidos" if n["ingresos"] else None),
+                         torta=torta)
+    return png, totales
 
 
 def _id_guardado(store, clave) -> int | None:
@@ -784,17 +830,7 @@ def _panel_al_dia(store, ahora):
         except (ValueError, TypeError):
             pass            # marca ilegible: se regenera y se reescribe
 
-    totales = [store.gasto_neto_por_fecha(ini, corte)[0] for _lbl, ini, corte in ciclos]
-    total_act = totales[0]
-    proyeccion = (total_act * dias_ciclo // (transcurridos + 1)
-                  if total_act > 0 and 3 <= transcurridos < dias_ciclo - 1 else None)
-    png = _grafico_ritmo(store,
-                         [(lbl, ini, corte, tot)
-                          for (lbl, ini, corte), tot in zip(ciclos, totales)],
-                         dias_ciclo, transcurridos, proyeccion,
-                         bloques=_bloques_panel(n),
-                         nota=(f"«Débito y transf.» va neto de {_pesos(abs(n['ingresos']))} "
-                               f"de ingresos recibidos" if n["ingresos"] else None))
+    png, _totales = _imagen_del_ciclo(store, ciclos, dias_ciclo, transcurridos, n)
     if png is None:
         return
 
