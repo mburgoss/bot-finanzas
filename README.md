@@ -125,6 +125,15 @@ ni se sube la imagen al pedo.
 `PANEL_MINUTOS` (15) ya no gobierna eso: es solo cada cuánto refrescar el sello
 "Actualizado" para que el panel no parezca muerto en un día sin movimientos.
 
+**Y baja solo al final del chat cuando se entierra.** Editar un mensaje no lo mueve,
+así que con el tiempo el panel quedaría cientos de mensajes arriba: tocás la barra de
+"fijado", saltás allá y quedás en medio del historial viejo. Cada `PANEL_MOVER_TRAS`
+mensajes (6) el panel se borra y se manda de nuevo abajo, silencioso.
+
+No se mueve en cada corrida a propósito: **cada movida deja un "fijó una foto" en el
+chat**, así que el disparador son los mensajes que pasaron, no el reloj. Un día sin
+movimientos no lo mueve ni una vez. Con `PANEL_MOVER_TRAS=0` se queda donde nació.
+
 El id del mensaje vive en la hoja `Config` (`panel_message_id`): si lo borrás del
 chat, la próxima corrida crea uno nuevo y lo vuelve a fijar.
 

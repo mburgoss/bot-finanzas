@@ -371,14 +371,20 @@ def _manejar_update(store, up) -> bool:
     return False
 
 
-def procesar_comandos(store: Store):
+def procesar_comandos(store: Store) -> int:
+    """Procesa comandos y toques de botones. Devuelve cuántos MENSAJES escribió
+    el usuario: son mensajes que aparecen en el chat y entierran el panel. Los
+    toques de botón no cuentan — no dejan mensaje visible."""
     offset = int(store.get_config("telegram_offset", "0") or "0")
     updates = telegram_bot.obtener_updates(offset)
     nuevo_offset = offset
     dirty = False  # ¿hubo cambios? Si sí, se regeneran las hojas 1 vez al final.
+    del_usuario = 0
 
     for up in updates:
         nuevo_offset = max(nuevo_offset, up["update_id"])
+        if up.get("message") or up.get("edited_message"):
+            del_usuario += 1
         try:
             if _manejar_update(store, up):
                 dirty = True
@@ -397,6 +403,7 @@ def procesar_comandos(store: Store):
 
     if nuevo_offset != offset:
         store.set_config("telegram_offset", nuevo_offset)
+    return del_usuario
 
 
 def _de_remitente_conocido(remitente: str) -> bool:
@@ -783,7 +790,29 @@ def _id_guardado(store, clave) -> int | None:
     return int(m.group(1)) if m else None
 
 
-def _panel_al_dia(store, ahora):
+def _toca_bajar_el_panel(store, en_chat: int) -> bool:
+    """Lleva la cuenta de cuánto se enterró el panel y dice si toca bajarlo.
+
+    El contador vive en la hoja Config y solo se escribe cuando efectivamente
+    aparecieron mensajes nuevos: escribirlo en cada corrida serían 1.440
+    escrituras diarias contra la API de Sheets para no cambiar nada."""
+    if not config.PANEL_MOVER_TRAS:
+        return False
+    acumulado = _entero(store.get_config("panel_enterrado", 0)) + en_chat
+    if acumulado >= config.PANEL_MOVER_TRAS:
+        return True
+    if en_chat:
+        store.set_config("panel_enterrado", str(acumulado))
+    return False
+
+
+def _entero(valor) -> int:
+    """La hoja puede devolver el contador como texto, entero o decimal."""
+    m = re.fullmatch(r"(\d+)(?:\.0*)?", str(valor or "").strip())
+    return int(m.group(1)) if m else 0
+
+
+def _panel_al_dia(store, ahora, en_chat: int = 0):
     """Mantiene UN mensaje fijado en el chat con el gráfico del ciclo al día.
 
     En vez de mandar una foto nueva cada vez (que se entierra en el historial),
@@ -799,9 +828,16 @@ def _panel_al_dia(store, ahora):
 
     PANEL_MINUTOS pasa a ser solo eso: cada cuánto refrescar el "Actualizado"
     cuando no cambió nada, para que el panel no parezca muerto.
+
+    `en_chat` son los mensajes que aparecieron en el chat en esta corrida. Cada
+    tantos (PANEL_MOVER_TRAS) el panel se BAJA al final: se borra y se manda de
+    nuevo abajo, porque editar un mensaje no lo mueve y con el tiempo quedaría
+    cientos de mensajes arriba.
     """
     if not config.PANEL_ACTIVO:
         return
+
+    bajar = _toca_bajar_el_panel(store, en_chat)
 
     hoy = ahora.date()
     dias_ciclo, transcurridos, ciclos = _ventanas_de_ciclo(hoy)
@@ -821,7 +857,9 @@ def _panel_al_dia(store, ahora):
     ahora_naive = ahora.replace(tzinfo=None)
     # str() a propósito: la hoja puede devolver el valor como número o como
     # fecha ya interpretada, no siempre como el texto que se guardó.
-    if firma == str(store.get_config("panel_firma", "") or ""):
+    # `bajar` gana sobre la firma: la movida es de posición, no de contenido, y
+    # si esperáramos a que cambien los números el panel podría no bajar nunca.
+    if not bajar and firma == str(store.get_config("panel_firma", "") or ""):
         ultimo = str(store.get_config("panel_actualizado", "") or "")
         try:
             minutos = (ahora_naive - datetime.fromisoformat(ultimo)).total_seconds() / 60
@@ -842,7 +880,7 @@ def _panel_al_dia(store, ahora):
         store.set_config("panel_actualizado", ahora_naive.isoformat(timespec="seconds"))
 
     mid = _id_guardado(store, "panel_message_id")
-    if mid:
+    if mid and not bajar:
         estado = telegram_bot.editar_foto(mid, png, caption)
         if estado == "ok":
             _marcar()
@@ -853,14 +891,19 @@ def _panel_al_dia(store, ahora):
             # siguiente, que es dentro de un minuto.
             return
 
-    # No hay panel, o el mensaje ya no existe. Se desfija el viejo antes de
-    # crear el nuevo para no acumular fijados.
+    # Acá se llega por tres caminos: no había panel, el mensaje ya no existe, o
+    # toca bajarlo al final del chat. El viejo se borra (y si no se puede, al
+    # menos se desfija) para no dejar dos fotos dando vueltas.
     if mid:
-        telegram_bot.desfijar(mid)
-    msg = telegram_bot.enviar_foto(png, caption)
+        if not telegram_bot.borrar(mid):
+            telegram_bot.desfijar(mid)
+    # Silencioso: bajar el panel es un reacomodo, no una novedad que valga un
+    # sonido en el teléfono.
+    msg = telegram_bot.enviar_foto(png, caption, silencioso=bool(mid))
     if not msg:
         return
     store.set_config("panel_message_id", str(msg["message_id"]))
+    store.set_config("panel_enterrado", "0")     # arranca de cero abajo de todo
     _marcar()
     telegram_bot.fijar(msg["message_id"])
 
@@ -913,7 +956,7 @@ def _crear_store(intentos: int = 3):
 
 def main():
     store = _crear_store()
-    procesar_comandos(store)
+    del_usuario = procesar_comandos(store)
     nuevos = procesar_correos(store)
     if nuevos:
         try:
@@ -923,7 +966,11 @@ def main():
             print(f"[aviso] no pude regenerar las hojas ahora: {e}")
     _quizas_resumen_nocturno(store)
     try:
-        _panel_al_dia(store, _ahora_local())
+        # Todo lo que apareció en el chat antes del panel: lo que escribió el
+        # usuario más lo que mandó el bot. Con eso el panel sabe cuánto se
+        # enterró y cuándo le toca bajar al final.
+        _panel_al_dia(store, _ahora_local(),
+                      en_chat=del_usuario + telegram_bot.mensajes_enviados())
     except Exception as e:
         # El panel es un extra: si falla, no puede tumbar la corrida que ya
         # registró los movimientos.

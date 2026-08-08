@@ -58,6 +58,13 @@ PANEL_ACTIVO = os.environ.get("PANEL_ACTIVO", "1").strip().lower() not in ("0", 
 # la corrida siguiente sin esperar esto: el disparador es el contenido, no el reloj.
 PANEL_MINUTOS = int(os.environ.get("PANEL_MINUTOS", "15"))
 
+# Cuántos mensajes tienen que pasar en el chat para que el panel se BAJE al
+# final. Editar un mensaje no lo mueve, así que con el tiempo el panel queda
+# cientos de mensajes arriba: cada tantos mensajes se borra y se manda de nuevo
+# abajo. No puede ser cada vez, porque cada movida deja un "fijó una foto" en el
+# chat. En 0 se desactiva y el panel se queda donde nació.
+PANEL_MOVER_TRAS = int(os.environ.get("PANEL_MOVER_TRAS", "6"))
+
 # Vista previa a pedido: manda el resumen del día sin esperar a RESUMEN_HORA y
 # sin marcar el día como enviado. Se activa desde el input del workflow.
 FORZAR_RESUMEN = os.environ.get("FORZAR_RESUMEN", "").strip().lower() in ("1", "true", "yes", "si", "sí")

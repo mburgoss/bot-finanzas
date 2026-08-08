@@ -13,6 +13,14 @@ from . import config
 
 API = f"https://api.telegram.org/bot{config.TELEGRAM_TOKEN}"
 
+# Cuántos mensajes mandó el bot en esta corrida. Lo usa el panel para saber
+# cuánto se enterró en el chat y decidir si le toca bajar al final.
+_enviados = 0
+
+
+def mensajes_enviados() -> int:
+    return _enviados
+
 
 def enviar(texto: str, teclado: dict | None = None, parse_mode: str = "HTML") -> bool:
     """Manda un mensaje. Devuelve False si Telegram lo rechazó.
@@ -39,10 +47,13 @@ def enviar(texto: str, teclado: dict | None = None, parse_mode: str = "HTML") ->
         # description trae el motivo de Telegram, no datos del movimiento.
         print(f"[aviso] Telegram rechazó el mensaje: {data.get('description')!r}")
         return False
+    global _enviados
+    _enviados += 1
     return True
 
 
-def enviar_foto(imagen: bytes, caption: str = "", parse_mode: str = "HTML") -> dict | None:
+def enviar_foto(imagen: bytes, caption: str = "", parse_mode: str = "HTML",
+                silencioso: bool = False) -> dict | None:
     """Manda un PNG (sendPhoto). Devuelve el mensaje creado, o None si Telegram
     lo rechazó, para que quien llama pueda caer al texto en vez de quedarse sin
     resumen. El dict trae 'message_id', necesario para editarlo después.
@@ -55,6 +66,7 @@ def enviar_foto(imagen: bytes, caption: str = "", parse_mode: str = "HTML") -> d
             "chat_id": config.TELEGRAM_CHAT_ID,
             "caption": caption[:1024],
             "parse_mode": parse_mode,
+            "disable_notification": silencioso,
         },
         files={"photo": ("resumen.png", imagen, "image/png")},
         timeout=60,
@@ -67,6 +79,8 @@ def enviar_foto(imagen: bytes, caption: str = "", parse_mode: str = "HTML") -> d
     if not data.get("ok"):
         print(f"[aviso] Telegram rechazó la foto: {data.get('description')!r}")
         return None
+    global _enviados
+    _enviados += 1
     return data.get("result")
 
 
@@ -178,3 +192,20 @@ def obtener_updates(offset: int) -> list[dict]:
     )
     data = resp.json()
     return data.get("result", []) if data.get("ok") else []
+
+
+def borrar(message_id: int) -> bool:
+    """Borra un mensaje del bot (deleteMessage).
+
+    Telegram solo deja borrar mensajes propios de menos de 48 horas. Si falla,
+    quien llama igual debe seguir: peor que un panel viejo en el historial es
+    quedarse sin panel nuevo."""
+    try:
+        resp = requests.post(
+            f"{API}/deleteMessage",
+            json={"chat_id": config.TELEGRAM_CHAT_ID, "message_id": message_id},
+            timeout=30,
+        )
+        return bool(resp.json().get("ok"))
+    except (requests.exceptions.RequestException, ValueError):
+        return False
