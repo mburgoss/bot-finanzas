@@ -46,7 +46,7 @@ jobs:
           GRAFICO_TEMA: ${{ inputs.tema || 'claro' }}
           FORZAR_RESUMEN: ${{ inputs.forzar_resumen }}
           PANEL_MINUTOS: "15"          # solo refresca el sello de hora; los cambios salen al toque
-          PANEL_MOVER_TRAS: "6"        # cada cuántos mensajes el panel baja al final del chat
+          PANEL_MOVER_TRAS: "1"        # 1 = el panel queda siempre pegado abajo del último mensaje
           GMAIL_USER: ${{ secrets.GMAIL_USER }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
           BANK_SENDERS: ${{ secrets.BANK_SENDERS }}

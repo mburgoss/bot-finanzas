@@ -545,6 +545,16 @@ def _grafico_ritmo(store, ciclos, dias_ciclo: int, transcurridos: int,
         return None
 
 
+def _el_panel_bajara() -> bool:
+    """True si el panel se va a reacomodar al final del chat en esta corrida.
+
+    Lo consulta el resumen nocturno: cuando el panel baja igual, mandar la foto
+    del resumen dejaría dos gráficos idénticos pegados. El mensaje de texto que
+    manda el resumen cuenta como uno más, así que con PANEL_MOVER_TRAS=1 el
+    panel baja seguro y queda justo debajo."""
+    return bool(config.PANEL_ACTIVO and config.PANEL_MOVER_TRAS)
+
+
 def _ventanas_de_ciclo(hoy: date):
     """Ventanas del ciclo en curso y los DOS anteriores, cortadas al mismo día.
 
@@ -645,7 +655,10 @@ def _resumen_nocturno(store, hoy: date):
     # Colapsa líneas en blanco de más: cuando hay imagen se saltean bloques
     # enteros y quedaban dos vacías seguidas bajo el título.
     texto = re.sub(r"\n{3,}", "\n\n", "\n".join(lineas)).strip()
-    if png is None:
+    if png is None or _el_panel_bajara():
+        # Si el panel va a bajar al final del chat en esta misma corrida, mandar
+        # acá la foto dejaría DOS gráficos idénticos pegados. El texto notifica y
+        # la imagen la pone el panel, justo debajo.
         telegram_bot.enviar(texto)
         return
     # El caption de Telegram admite 1024 caracteres; si no entra, el texto va aparte.

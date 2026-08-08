@@ -59,11 +59,16 @@ PANEL_ACTIVO = os.environ.get("PANEL_ACTIVO", "1").strip().lower() not in ("0", 
 PANEL_MINUTOS = int(os.environ.get("PANEL_MINUTOS", "15"))
 
 # Cuántos mensajes tienen que pasar en el chat para que el panel se BAJE al
-# final. Editar un mensaje no lo mueve, así que con el tiempo el panel queda
-# cientos de mensajes arriba: cada tantos mensajes se borra y se manda de nuevo
-# abajo. No puede ser cada vez, porque cada movida deja un "fijó una foto" en el
-# chat. En 0 se desactiva y el panel se queda donde nació.
-PANEL_MOVER_TRAS = int(os.environ.get("PANEL_MOVER_TRAS", "6"))
+# final. Editar un mensaje no lo mueve, así que sin esto el panel quedaría con el
+# tiempo cientos de mensajes arriba: cada tantos mensajes se borra y se manda de
+# nuevo abajo.
+#   1  -> queda siempre pegado abajo del último mensaje (por defecto). Desde que
+#         la bajada no fija nada, no cuesta avisos; y como el panel nunca se pone
+#         viejo, nunca choca con el límite de 48 horas que Telegram impone para
+#         borrar un mensaje propio.
+#   >1 -> baja cada N mensajes: menos llamadas a la API, algo más de scroll.
+#   0  -> se queda quieto donde nació, y ahí sí se fija arriba del chat.
+PANEL_MOVER_TRAS = int(os.environ.get("PANEL_MOVER_TRAS", "1"))
 
 # Vista previa a pedido: manda el resumen del día sin esperar a RESUMEN_HORA y
 # sin marcar el día como enviado. Se activa desde el input del workflow.

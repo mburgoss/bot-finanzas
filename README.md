@@ -140,8 +140,14 @@ sí, y `PANEL_MOVER_TRAS` elige entre ellas:
 
 | `PANEL_MOVER_TRAS` | Comportamiento |
 |---|---|
-| `6` (por defecto) | Baja al final cada 6 mensajes, **sin fijar**, sin avisos |
+| **`1`** (por defecto) | Queda **siempre pegado abajo del último mensaje**, sin fijar, sin avisos |
+| `>1` | Baja cada N mensajes: menos llamadas a la API, algo más de scroll |
 | `0` | Se queda quieto y **fijado** arriba, como antes |
+
+Con `1` el chat queda con **todas tus compras y una sola imagen, al final**. Y como el
+panel nunca se pone viejo, nunca choca con el límite de **48 horas** que Telegram
+impone para que un bot borre un mensaje propio — con umbrales altos y una semana
+tranquila, el panel podía pasarse de ese plazo y dejar una imagen huérfana.
 
 El panel se manda siempre **silencioso**: es ambiente, no una novedad. Lo que sí te
 notifica son las compras y el resumen de la noche.
@@ -166,9 +172,13 @@ Las porciones son **gasto**, no ingresos: en una dona no se puede dibujar un sec
 negativo, así que un ingreso no aparece como categoría.
 
 ### 🌙 Resumen nocturno automático
-Cada noche (por defecto a las **22:00**, hora `TIMEZONE`) el bot te manda **la misma
-imagen del panel fijado** —curva, tablas y dona— con el texto del resumen debajo.
-Una sola función arma esa imagen, así que las dos no pueden divergir.
+Cada noche (por defecto a las **22:00**, hora `TIMEZONE`) el bot te manda el resumen.
+
+**Manda solo el texto**, porque el panel baja al final del chat en esa misma corrida
+y queda justo debajo: mandar también la foto dejaría **dos gráficos idénticos
+pegados**. El texto es el que notifica; la imagen la pone el panel. (Si desactivás el
+panel con `PANEL_ACTIVO=0` o `PANEL_MOVER_TRAS=0`, el resumen vuelve a mandar la foto
+por su cuenta.)
 
 El texto solo lleva lo que la imagen **no** dice:
 - Las **categorías que más crecieron** respecto al ciclo pasado, en barras de texto.
