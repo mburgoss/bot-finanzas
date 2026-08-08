@@ -897,15 +897,22 @@ def _panel_al_dia(store, ahora, en_chat: int = 0):
     if mid:
         if not telegram_bot.borrar(mid):
             telegram_bot.desfijar(mid)
-    # Silencioso: bajar el panel es un reacomodo, no una novedad que valga un
-    # sonido en el teléfono.
-    msg = telegram_bot.enviar_foto(png, caption, silencioso=bool(mid))
+    # Siempre silencioso: el panel es ambiente, no una novedad. Lo que sí avisa
+    # son las compras y el resumen de la noche.
+    msg = telegram_bot.enviar_foto(png, caption, silencioso=True)
     if not msg:
         return
     store.set_config("panel_message_id", str(msg["message_id"]))
     store.set_config("panel_enterrado", "0")     # arranca de cero abajo de todo
     _marcar()
-    telegram_bot.fijar(msg["message_id"])
+    # Fijar SOLO si el panel se queda quieto. Cuando baja al final del chat el
+    # fijado no aporta nada —ya está a la vista— y cada pinChatMessage deja un
+    # "fijó una foto" en la conversación, que es justo el ruido que queríamos
+    # sacar. Las dos configuraciones son coherentes entre sí:
+    #   PANEL_MOVER_TRAS > 0  -> se mueve, no se fija, cero avisos
+    #   PANEL_MOVER_TRAS = 0  -> se queda quieto y fijado, como antes
+    if not config.PANEL_MOVER_TRAS:
+        telegram_bot.fijar(msg["message_id"])
 
 
 def _quizas_resumen_nocturno(store):

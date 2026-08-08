@@ -130,9 +130,21 @@ así que con el tiempo el panel quedaría cientos de mensajes arriba: tocás la 
 "fijado", saltás allá y quedás en medio del historial viejo. Cada `PANEL_MOVER_TRAS`
 mensajes (6) el panel se borra y se manda de nuevo abajo, silencioso.
 
-No se mueve en cada corrida a propósito: **cada movida deja un "fijó una foto" en el
-chat**, así que el disparador son los mensajes que pasaron, no el reloj. Un día sin
-movimientos no lo mueve ni una vez. Con `PANEL_MOVER_TRAS=0` se queda donde nació.
+No se mueve en cada corrida a propósito: el disparador son los mensajes que pasaron,
+no el reloj. Un día sin movimientos no lo mueve ni una vez.
+
+**Cuando se mueve, no se fija.** Y es a propósito: si el panel siempre está al final
+del chat, el fijado no aporta nada —ya está a la vista— y cada `pinChatMessage` deja
+un "fijó una foto" en la conversación. Las dos configuraciones son coherentes entre
+sí, y `PANEL_MOVER_TRAS` elige entre ellas:
+
+| `PANEL_MOVER_TRAS` | Comportamiento |
+|---|---|
+| `6` (por defecto) | Baja al final cada 6 mensajes, **sin fijar**, sin avisos |
+| `0` | Se queda quieto y **fijado** arriba, como antes |
+
+El panel se manda siempre **silencioso**: es ambiente, no una novedad. Lo que sí te
+notifica son las compras y el resumen de la noche.
 
 El id del mensaje vive en la hoja `Config` (`panel_message_id`): si lo borrás del
 chat, la próxima corrida crea uno nuevo y lo vuelve a fijar.
