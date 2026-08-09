@@ -181,9 +181,12 @@ panel con `PANEL_ACTIVO=0` o `PANEL_MOVER_TRAS=0`, el resumen vuelve a mandar la
 por su cuenta.)
 
 El texto solo lleva lo que la imagen **no** dice:
-- Las **categorías que más crecieron** respecto al ciclo pasado, en barras de texto.
-  La dona muestra en qué se fue la plata *este* ciclo; esto muestra qué *cambió*.
-- La **proyección** vs tu **promedio** de los últimos ciclos.
+- **Lo que más subió** respecto al ciclo pasado. La dona muestra en qué se fue la
+  plata *este* ciclo; esto muestra qué **cambió**, que no lo contesta nada más.
+  Los montos van con **`+` adelante** a propósito: son variaciones, y la dona lista
+  las mismas categorías con su gasto — sin el signo, los dos números se leían igual.
+- El cierre proyectado contra tu **promedio** de ciclos. La proyección sola ya está
+  dibujada en la imagen; lo que falta ahí es **contra qué** se compara.
 
 Cada dato aparece una sola vez.
 

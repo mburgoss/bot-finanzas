@@ -495,21 +495,26 @@ def _ahora_local():
         return datetime.now()
 
 
-def _barras(items, ancho: int = 10):
+def _barras(items, ancho: int = 10, con_signo: bool = False):
     """Barras de texto monoespaciadas. `items` = lista de (etiqueta, valor).
-    Devuelve un bloque <pre> (escalado al mayor) o None si está vacío."""
+    Devuelve un bloque <pre> (escalado al mayor) o None si está vacío.
+
+    `con_signo` antepone '+' a los montos: se usa cuando los valores son
+    variaciones y no gastos, para que no se confundan con los de la dona."""
     if not items:
         return None
+    signo = "+" if con_signo else ""
     maximo = max((v for _, v in items), default=0)
     w_lbl = min(14, max(len(str(l)) for l, _ in items))
-    w_amt = max(len(_pesos(v)) for _, v in items)
+    w_amt = max(len(signo + _pesos(v)) for _, v in items)
     filas = []
     for l, v in items:
         n = max(1, round(v / maximo * ancho)) if (maximo > 0 and v > 0) else 0
         barra = ("█" * n).ljust(ancho)
         # El relleno se calcula con el texto crudo y se escapa después, para que
         # una categoría con '&' no rompa el bloque <pre> entero.
-        filas.append(f"{_esc(str(l)[:w_lbl].ljust(w_lbl))} {barra} {_pesos(v):>{w_amt}}")
+        filas.append(f"{_esc(str(l)[:w_lbl].ljust(w_lbl))} {barra} "
+                     f"{signo + _pesos(v):>{w_amt}}")
     return "<pre>" + "\n".join(filas) + "</pre>"
 
 
@@ -638,19 +643,24 @@ def _resumen_nocturno(store, hoy: date):
     crecimiento = sorted(((c, cat_act.get(c, 0) - cat_ant1.get(c, 0)) for c in cats),
                          key=lambda x: -x[1])
     top = [(c, d) for c, d in crecimiento if d > 0][:5]
-    barras_top = _barras(top)
+    barras_top = _barras(top, con_signo=True)
     if barras_top:
         lineas.append("")
-        lineas.append(f"<b>Categorías que más crecieron vs {_mes_corto(lbl_ant1)}</b>")
+        # "Subió" y con el signo + delante del monto: la dona de la imagen lista
+        # las mismas categorías con su GASTO, y sin marcar que acá va un delta,
+        # los dos números se leían como si fueran lo mismo.
+        lineas.append(f"<b>Lo que más subió vs {_mes_corto(lbl_ant1)}</b>")
         lineas.append(barras_top)
 
-    # 3) Proyección del ciclo vs promedio.
+    # 3) Cierre proyectado contra el promedio. La proyección sola ya está
+    #    dibujada en la imagen; lo que no está —y es el punto— es contra qué
+    #    referencia se compara, así que va en una sola frase.
     if promedio and proyeccion:
-        estado = "por encima del promedio" if proyeccion > promedio else "dentro del promedio"
+        estado = ("<b>por encima</b> de tu promedio" if proyeccion > promedio
+                  else "dentro de tu promedio")
         lineas.append("")
-        lineas.append(f"<b>Proyección de cierre:</b> {_pesos(proyeccion)}")
-        lineas.append(f"<b>Promedio de ciclos:</b> {_pesos(promedio)}")
-        lineas.append(f"Estado: {estado}")
+        lineas.append(f"A este ritmo cerrás en <b>{_pesos(proyeccion)}</b>, "
+                      f"{estado} de {_pesos(promedio)}.")
 
     # Colapsa líneas en blanco de más: cuando hay imagen se saltean bloques
     # enteros y quedaban dos vacías seguidas bajo el título.
