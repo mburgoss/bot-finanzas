@@ -64,7 +64,21 @@ def _teclado_movimiento(store, reg) -> dict:
     if fila:
         filas.append(fila)
     filas.append([{"text": "Otra categoría", "callback_data": f"c|{mov_id}|x"}])
+
+    # Toggle de anulación, solo en su fila al final: es la acción destructiva y no
+    # tiene que quedar pegada a los botones de categoría. El callback lleva el
+    # estado DESEADO (1 = anular, 0 = restaurar), no una orden de invertir, así
+    # que dos toques seguidos no se pisan entre sí.
+    anulado = _esta_anulado(reg)
+    filas.append([{
+        "text": "✓ Eliminado · deshacer" if anulado else "🗑 Eliminar",
+        "callback_data": f"b|{mov_id}|{0 if anulado else 1}",
+    }])
     return {"inline_keyboard": filas}
+
+
+def _esta_anulado(reg) -> bool:
+    return str(reg.get("estado") or "").lower() == "anulado"
 
 
 def _render_movimiento(store, reg):
@@ -101,13 +115,19 @@ def _render_movimiento(store, reg):
     # categoría cuadre con el total del mes. Solo 'revisar' queda afuera.
     categorizable = tipo in ("credito", "debito", "transferencia", "ingreso")
     signo = "+" if tipo == "ingreso" else ""
+    anulado = _esta_anulado(reg)
+    # Tachado cuando está anulado: el monto sigue a la vista (para saber qué se
+    # eliminó) pero se lee de una que ya no suma.
+    monto_txt = f"{signo}{_pesos(abs(monto))}"
     lineas = [
         cabecera,
         detalle,
-        f"Monto: {signo}{_pesos(abs(monto))}",
+        f"Monto: <s>{monto_txt}</s>" if anulado else f"Monto: {monto_txt}",
         f"Fecha: {fecha.strftime('%d/%m/%Y')}",
         f"ID: <code>{mov_id}</code>",
     ]
+    if anulado:
+        lineas.append("<b>Eliminado</b> — no cuenta en los totales")
     if tipo == "credito":
         lineas.append(f"Cuotas: <b>{int(reg.get('num_cuotas') or 1)}</b>")
     if categorizable:
@@ -170,6 +190,16 @@ def _procesar_callback(store, cq) -> bool:
             return False
         store.set_categoria(mov_id, cats[idx][1])
         aviso = cats[idx][1]
+    elif accion == "b":  # eliminar / restaurar — mismo efecto que /eliminar y /restaurar
+        if val == "1":
+            cambiado = store.eliminar_movimiento(mov_id)
+            aviso = "Eliminado, ya no cuenta"
+        else:
+            cambiado = store.restaurar_movimiento(mov_id)
+            aviso = "Restaurado, vuelve a contar"
+        if not cambiado:
+            telegram_bot.responder_callback(cq["id"], "No pude cambiarlo")
+            return False
     else:
         telegram_bot.responder_callback(cq["id"])
         return False

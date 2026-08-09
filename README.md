@@ -24,9 +24,13 @@ Corre solo en **GitHub Actions** cada 5 minutos: tu PC puede estar apagado.
 > transferencia real a tu cuenta entra, y los correos ajenos se ignoran.
 
 ### Botones (lo más cómodo)
-Cada aviso de un movimiento trae botones para clasificarlo sin escribir nada:
+Cada aviso de un movimiento trae botones para manejarlo sin escribir nada:
 - **Cuotas** (solo crédito): `1 · 3 · 6 · 12 · Otra`.
 - **Categoría**: `Alimentación · Transporte · Ocio · … · Otra categoría`.
+- **🗑 Eliminar**: anula el movimiento, igual que `/eliminar`. Es un **interruptor**:
+  al tocarlo queda `✓ Eliminado · deshacer`, el monto se muestra tachado y deja de
+  contar en los totales; tocándolo otra vez vuelve a contar. **Nunca borra la fila**
+  de la planilla — solo la marca como anulada.
 
 Tocás y el bot **edita el mismo mensaje** marcando lo elegido con `✓`. La opción
 **Otra** te deja escribir un valor nuevo (una categoría nueva queda guardada y
