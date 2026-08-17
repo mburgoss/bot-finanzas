@@ -371,6 +371,41 @@ class Store:
         self._invalidar()
         return self.obtener_movimiento(mov_id)
 
+    def actualizar_tipo(self, mov_id, tipo: str) -> dict | None:
+        """Cambia crédito <-> débito. Lo usan los movimientos que llegaron sin
+        tipo (correo que no se supo leer) y también sirve para corregir un tipo
+        mal detectado.
+
+        Al pasar a crédito se deja 1 cuota si no tenía: un movimiento de crédito
+        sin num_cuotas no se reparte bien en el ciclo."""
+        reg = self.obtener_movimiento(mov_id)
+        fila = self._fila_de_id(mov_id)
+        if not reg or not fila or tipo not in ("credito", "debito"):
+            return None
+        self.mov.update_cell(fila, COL["tipo"], tipo)
+        if tipo == "credito" and not _num(reg.get("num_cuotas")):
+            self.mov.update_cell(fila, COL["num_cuotas"], 1)
+            self.mov.update_cell(fila, COL["valor_cuota"], _num(reg["monto"]))
+        self._invalidar()
+        return self.obtener_movimiento(mov_id)
+
+    def actualizar_monto(self, mov_id, monto: int) -> dict | None:
+        """Fija el monto. Para los correos que no se supieron leer, donde el
+        monto es una lectura aproximada que hay que poder corregir a mano.
+
+        El signo lo manda el tipo, no lo que se escriba: un ingreso se guarda
+        negativo y el resto positivo, que es como cuenta el resto del bot."""
+        reg = self.obtener_movimiento(mov_id)
+        fila = self._fila_de_id(mov_id)
+        if not reg or not fila or monto <= 0:
+            return None
+        signo = -1 if reg["tipo"] == "ingreso" else 1
+        self.mov.update_cell(fila, COL["monto"], signo * abs(int(monto)))
+        cuotas = max(1, _num(reg.get("num_cuotas")) or 1)
+        self.mov.update_cell(fila, COL["valor_cuota"], signo * abs(int(monto)) // cuotas)
+        self._invalidar()
+        return self.obtener_movimiento(mov_id)
+
     def eliminar_movimiento(self, mov_id) -> dict | None:
         """Anula el movimiento (deja de contar) SIN borrarlo. Reversible con restaurar."""
         fila = self._fila_de_id(mov_id)

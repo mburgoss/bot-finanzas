@@ -24,7 +24,7 @@ from .formato import delta_pct as _delta_pct
 from .formato import mes_corto as _mes_corto
 from .formato import nombre_ciclo as _nombre_ciclo
 from .formato import pesos as _pesos
-from .parser import Movimiento, parsear, parece_movimiento
+from .parser import Movimiento, monto_probable, parsear, parece_movimiento
 from .sheets import Store
 
 
@@ -44,6 +44,24 @@ def _teclado_movimiento(store, reg) -> dict:
     La opción elegida se marca con '✓'; 'Otra' abre el modo escritura."""
     mov_id = int(reg["id"])
     filas = []
+
+    # Crédito o débito. Va primero porque en un movimiento 'revisar' es el dato
+    # que falta para que empiece a contar; en uno normal sirve para corregir un
+    # tipo mal detectado. No aplica a ingresos ni transferencias.
+    if reg["tipo"] in ("credito", "debito", "revisar"):
+        filas.append([
+            {"text": ("✓ Crédito" if reg["tipo"] == "credito" else "Crédito"),
+             "callback_data": f"t|{mov_id}|credito"},
+            {"text": ("✓ Débito" if reg["tipo"] == "debito" else "Débito"),
+             "callback_data": f"t|{mov_id}|debito"},
+        ])
+
+    if reg["tipo"] == "revisar":
+        # El monto es una lectura aproximada: hay que poder arreglarlo sin salir
+        # de Telegram, que es justo lo que el aviso viejo no permitía.
+        filas.append([{"text": "✏️ Corregir monto",
+                       "callback_data": f"m|{mov_id}|x"}])
+
     if reg["tipo"] == "credito":
         actual_n = int(reg.get("num_cuotas") or 1)
         fila = []
@@ -98,7 +116,10 @@ def _render_movimiento(store, reg):
     # Todo lo que viene del correo (comercio, nombres) se escapa: un '&' o un '<'
     # en un nombre de comercio rompe el parseo HTML de Telegram y el mensaje se
     # descarta entero.
-    if tipo == "ingreso":
+    if tipo == "revisar":
+        cabecera = "⚠️ <b>No supe leer este correo</b>"
+        detalle = f"{_esc(comercio.replace('REVISAR: ', ''))}"
+    elif tipo == "ingreso":
         cabecera = "<b>Ingreso recibido</b>"
         detalle = f"De: {_esc(comercio.replace('Transferencia de ', ''))}"
     elif tipo == "transferencia":
@@ -112,8 +133,9 @@ def _render_movimiento(store, reg):
         detalle = f"{_esc(comercio)}   (****{_esc(str(reg.get('digitos', '')))})"
 
     # Se categoriza todo lo que cuenta (gastos e ingresos), para que la suma por
-    # categoría cuadre con el total del mes. Solo 'revisar' queda afuera.
-    categorizable = tipo in ("credito", "debito", "transferencia", "ingreso")
+    # categoría cuadre con el total del mes. 'revisar' también lleva teclado:
+    # es justamente el que hay que completar a mano.
+    categorizable = tipo in ("credito", "debito", "transferencia", "ingreso", "revisar")
     signo = "+" if tipo == "ingreso" else ""
     anulado = _esta_anulado(reg)
     # Tachado cuando está anulado: el monto sigue a la vista (para saber qué se
@@ -126,7 +148,13 @@ def _render_movimiento(store, reg):
         f"Fecha: {fecha.strftime('%d/%m/%Y')}",
         f"ID: <code>{mov_id}</code>",
     ]
-    if anulado:
+    if tipo == "revisar":
+        lineas[2] += "  <i>(aproximado)</i>"
+        lineas.append("Tipo: <i>sin definir — elegí crédito o débito abajo</i>")
+    if anulado and tipo == "revisar":
+        lineas.append("<b>Eliminado</b> — completá el tipo y sacalo de eliminado "
+                      "para que cuente")
+    elif anulado:
         lineas.append("<b>Eliminado</b> — no cuenta en los totales")
     if tipo == "credito":
         lineas.append(f"Cuotas: <b>{int(reg.get('num_cuotas') or 1)}</b>")
@@ -190,6 +218,17 @@ def _procesar_callback(store, cq) -> bool:
             return False
         store.set_categoria(mov_id, cats[idx][1])
         aviso = cats[idx][1]
+    elif accion == "t":  # crédito / débito
+        if not store.actualizar_tipo(mov_id, val):
+            telegram_bot.responder_callback(cq["id"], "No pude cambiar el tipo")
+            return False
+        aviso = "Crédito" if val == "credito" else "Débito"
+    elif accion == "m":  # corregir monto — se responde escribiendo el número
+        store.set_config("pendiente", f"mon:{mov_id}")
+        telegram_bot.responder_callback(cq["id"], "Escribí el monto correcto")
+        telegram_bot.enviar(f"¿Cuál es el monto de <code>{mov_id}</code>? "
+                            f"Respondé solo con el número.")
+        return False
     elif accion == "b":  # eliminar / restaurar — mismo efecto que /eliminar y /restaurar
         if val == "1":
             cambiado = store.eliminar_movimiento(mov_id)
@@ -229,6 +268,17 @@ def _resolver_pendiente(store, mov_id: int, tipo_p: str, texto: str) -> bool:
         n = int(m.group())
         store.actualizar_cuotas(mov_id, n)
         telegram_bot.enviar(f"<code>{mov_id}</code> quedó en <b>{n} cuotas</b>.")
+        return True
+    if tipo_p == "mon":
+        # Se aceptan "12.900", "12900" y "$12.900": los puntos son separador de
+        # miles en Chile, así que se sacan antes de convertir.
+        m = re.search(r"\d[\d.]*", texto.replace(" ", ""))
+        if not m:
+            return False
+        monto = int(m.group().replace(".", ""))
+        if not store.actualizar_monto(mov_id, monto):
+            return False
+        telegram_bot.enviar(f"<code>{mov_id}</code> quedó en <b>{_pesos(monto)}</b>.")
         return True
     return False
 
@@ -321,7 +371,10 @@ def _manejar_update(store, up) -> bool:
         if m.group(1):  # un movimiento puntual (aunque ya tenga categoría)
             mov_id = int(m.group(1))
             reg = store.obtener_movimiento(mov_id)
-            if reg and reg["tipo"] in ("credito", "debito", "transferencia", "ingreso"):
+            # 'revisar' incluido a propósito: es el que más hace falta poder
+            # reabrir por id si se perdió el mensaje original en el chat.
+            if reg and reg["tipo"] in ("credito", "debito", "transferencia",
+                                       "ingreso", "revisar"):
                 txt, tec = _render_movimiento(store, reg)
                 telegram_bot.enviar(txt, tec)
             else:
@@ -490,15 +543,22 @@ def procesar_correos(store: Store):
             # dependía del mismo detector que había fallado — cuando un banco
             # cambiaba la redacción, el movimiento se perdía sin dejar rastro.
             if parece_movimiento(asunto, cuerpo):
-                rev = Movimiento(fecha=date.today(), comercio=f"REVISAR: {asunto[:40]}",
-                                 monto=0, digitos="", tipo="revisar", uid=message_id)
+                # Se registra como un movimiento de verdad, con su mejor lectura
+                # del monto, y llega con los mismos botones que los demás. Nace
+                # ANULADO porque el monto es aproximado y falta el tipo: así no
+                # ensucia los totales hasta que Matías lo complete. El aviso que
+                # había antes pedía reenviar el correo, algo que no se puede
+                # hacer desde Telegram — era un callejón sin salida.
+                rev = Movimiento(fecha=date.today(),
+                                 comercio=f"REVISAR: {asunto[:40]}",
+                                 monto=monto_probable(asunto, cuerpo) or 0,
+                                 digitos="", tipo="revisar", uid=message_id)
                 rid = store.agregar_movimiento(rev)
-                telegram_bot.enviar(
-                    f"Recibí un correo que <b>mueve plata</b> pero no supe leerlo:\n"
-                    f"\"{_esc(asunto)}\"\n"
-                    f"Lo dejé como id <code>{rid}</code> (tipo 'revisar') en la planilla "
-                    f"para que lo completes, o reenvíame ese correo y agrego su formato."
-                )
+                store.eliminar_movimiento(rid)
+                reg = store.obtener_movimiento(rid)
+                if reg:
+                    texto, teclado = _render_movimiento(store, reg)
+                    telegram_bot.enviar(texto, teclado)
                 vistos.add(message_id)
                 nuevos += 1
             continue

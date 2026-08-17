@@ -196,6 +196,34 @@ _EXCLUIR_MOVIMIENTO = ("estado de cuenta", "cartola", "resumen mensual",
                        "resumen de cuenta", "resumen de tu tarjeta")
 
 
+# Etiquetas que suelen preceder al monto de la operación. Sirven para elegir
+# entre varios "$" del correo: el saldo o el cupo disponible también son montos,
+# y muchas veces MÁS grandes que la compra.
+_ETIQUETAS_MONTO = ("monto", "valor", "total", "importe", "cargo", "compra",
+                    "transferencia", "abono", "pago")
+
+
+def monto_probable(asunto: str, cuerpo: str) -> int | None:
+    """Mejor lectura del monto de un correo que no se supo parsear.
+
+    Es una ESTIMACIÓN, no un dato confiable: por eso el movimiento que se crea
+    con esto nace anulado y se puede corregir a mano. Prefiere el monto que
+    viene después de una etiqueta como "Monto:" y, si no hay ninguna, el primero
+    del texto — ni el mayor (sería el saldo) ni el menor (una comisión).
+    """
+    texto = _limpiar_texto(asunto + " " + cuerpo)
+    bajo = _sin_acentos(texto.lower())
+    candidatos = [(m.start(), int(m.group("monto").replace(".", "")))
+                  for m in RE_MONTO_GENERICO.finditer(texto)]
+    if not candidatos:
+        return None
+    for pos, monto in candidatos:
+        # Ventana corta hacia atrás: "Monto total: $12.900" sí, un párrafo no.
+        if any(e in bajo[max(0, pos - 40):pos] for e in _ETIQUETAS_MONTO):
+            return monto
+    return candidatos[0][1]
+
+
 def parece_movimiento(asunto: str, cuerpo: str) -> bool:
     """True si el correo parece mover plata: trae un monto en pesos y habla de
     una operación, y no es un estado de cuenta ni publicidad.

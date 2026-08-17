@@ -25,12 +25,28 @@ Corre solo en **GitHub Actions** cada 5 minutos: tu PC puede estar apagado.
 
 ### Botones (lo más cómodo)
 Cada aviso de un movimiento trae botones para manejarlo sin escribir nada:
+- **Crédito · Débito**: corrige el tipo si el bot lo detectó mal.
 - **Cuotas** (solo crédito): `1 · 3 · 6 · 12 · Otra`.
 - **Categoría**: `Alimentación · Transporte · Ocio · … · Otra categoría`.
 - **🗑 Eliminar**: anula el movimiento, igual que `/eliminar`. Es un **interruptor**:
   al tocarlo queda `✓ Eliminado · deshacer`, el monto se muestra tachado y deja de
   contar en los totales; tocándolo otra vez vuelve a contar. **Nunca borra la fila**
   de la planilla — solo la marca como anulada.
+
+#### Cuando el bot no entiende un correo
+Si un banco cambia la redacción y el parser no lo reconoce, el correo **no se
+pierde ni queda en un aviso sin salida**: llega como un movimiento más, con todos
+sus botones, y se completa desde Telegram.
+
+- Llega **ya eliminado**, así que **no ensucia los totales** hasta que lo completes.
+- El **monto es una lectura aproximada** (marcada como tal) — se prefiere el que
+  viene tras una etiqueta tipo `Monto:`, porque el saldo o el cupo suelen ser
+  montos más grandes en el mismo correo. Se corrige con **✏️ Corregir monto**.
+- El **tipo queda sin definir**: elegís `Crédito` o `Débito` y el mensaje pasa a
+  verse como cualquier otro cobro (con su fila de cuotas si es crédito).
+- Cuando está listo, **sacalo de eliminado** y empieza a contar.
+
+Si perdés el mensaje en el chat, `/clasificar <id>` te lo devuelve con sus botones.
 
 Tocás y el bot **edita el mismo mensaje** marcando lo elegido con `✓`. La opción
 **Otra** te deja escribir un valor nuevo (una categoría nueva queda guardada y
