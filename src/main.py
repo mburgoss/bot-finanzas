@@ -640,11 +640,7 @@ def _grafico_ritmo(store, ciclos, dias_ciclo: int, transcurridos: int,
             series, dias_ciclo,
             f"Ciclo {ciclos[0][0]} · día {dias} de {dias_ciclo}",
             proyeccion=proyeccion, tema=config.GRAFICO_TEMA, bloques=bloques,
-            nota=nota, torta=torta,
-            # Los % recién desde el 4º día, igual que la proyección: comparar
-            # contra uno o dos días del ciclo anterior da números como "−98%"
-            # que asustan y no dicen nada.
-            comparar=transcurridos >= 3)
+            nota=nota, torta=torta)
     except Exception as e:
         print(f"[aviso] no pude generar el gráfico del resumen: {e}")
         return None

@@ -75,7 +75,7 @@ def _formato_eje(maximo: int):
     return FuncFormatter(fmt)
 
 
-def _leyenda(ax, series, tema, comparar=True):
+def _leyenda(ax, series, tema):
     """Bloque leyenda + montos arriba a la izquierda (la zona que las curvas
     acumuladas dejan libre siempre, porque arrancan abajo y suben a la derecha).
 
@@ -112,7 +112,7 @@ def _leyenda(ax, series, tema, comparar=True):
                 color=tema["tinta"] if principal else tema["tinta2"],
                 fontweight="bold" if principal else "normal",
                 va="center", ha="right", zorder=7)
-        if not principal and comparar:
+        if not principal:
             d = delta_pct(actual, s["valores"][-1])
             # Gastar más que el ciclo de referencia es la dirección mala.
             # El signo menos va tipográfico (−), que el guión ASCII casi no se ve.
@@ -224,7 +224,7 @@ def _pie_de_tablas(fig, bloques, t, banda, nota=None):
 
 def ritmo_de_gasto(series, dias_ciclo: int, subtitulo: str,
                    proyeccion: int | None = None, tema: str = "claro",
-                   bloques=None, nota=None, torta=None, comparar=True) -> bytes:
+                   bloques=None, nota=None, torta=None) -> bytes:
     """Devuelve el PNG (bytes) del gráfico de ritmo de gasto.
 
     `series` es una lista de {"etiqueta": str, "valores": [acumulado por día]},
@@ -308,7 +308,7 @@ def ritmo_de_gasto(series, dias_ciclo: int, subtitulo: str,
     ax.set_xticks(ticks)
     ax.set_xlabel("día del ciclo", fontsize=9.5, color=t["apagado"], labelpad=8)
 
-    _leyenda(ax, series, t, comparar)
+    _leyenda(ax, series, t)
 
     # --- Encabezado y secciones del pie, fuera del área de trazado ---
     y_tablas = f(H_TORTA)                        # tope de la torta / piso tablas
