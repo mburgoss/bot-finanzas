@@ -197,20 +197,27 @@ siguiente `20/08 – 17/09`: los cortes se mueven mes a mes y no hay fórmula qu
 reproduzca. La regla del día 22 es una aproximación que manda al ciclo equivocado
 las compras cercanas al corte.
 
-Por eso los cortes se copian a mano en la hoja **`Ciclos`** — el propio estado de
-cuenta trae el **"PRÓXIMO PERÍODO DE FACTURACIÓN"**, así que es copiar dos fechas
-una vez al mes:
+**El bot calcula el corte solo.** La regla, verificada contra dos estados de
+cuenta: **cierra el día 19, y si cae fin de semana o feriado se adelanta al día
+hábil anterior**. Cerró el 19/08 (miércoles) y el 17/09 — porque el 19/09 era
+sábado y el 18 y 19 son Fiestas Patrias.
+
+Se configura con `CORTE_DIA` (19) y `CORTE_DESDE`, la fecha a partir de la cual
+rige. Antes de esa fecha se usa `BILLING_DAY`, para no reasignar de ciclo el
+historial ya cargado.
+
+La hoja **`Ciclos`** queda solo como **excepción**, para los meses en que el
+banco haga algo que la regla no predice (pasó en julio: cerró el 22 cuando la
+regla daba 17). Se copian del estado, que trae el "PRÓXIMO PERÍODO DE
+FACTURACIÓN":
 
 | ciclo | inicio | fin |
 |---|---|---|
 | 2026-08 | 2026-07-23 | 2026-08-19 |
 | 2026-09 | 2026-08-20 | 2026-09-17 |
 
-- **Las fechas anteriores al primer ciclo declarado siguen con la regla del día
-  fijo**, así el historial viejo no se mueve de lugar.
-- **Más allá del último declarado** el ciclo se proyecta manteniendo el día de
-  cierre conocido. Es una estimación explícita y se corrige sola en cuanto
-  agregás la fila real.
+El orden de prioridad es: **lo declarado en la hoja → la regla automática → la
+regla vieja del día fijo** (solo para fechas anteriores a `CORTE_DESDE`).
 - La **etiqueta** del ciclo no cambia: sigue siendo el mes de la fecha de cierre,
   igual que antes y que el estado de cuenta.
 - Una fila torcida movería movimientos de ciclo, así que el lector es estricto:

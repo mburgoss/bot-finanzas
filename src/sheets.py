@@ -11,6 +11,7 @@ Las filas se ubican buscando el id en la columna 1, no por posición.
 
 import json
 import re
+import unicodedata
 from datetime import date, timedelta
 
 import gspread
@@ -76,12 +77,20 @@ def ciclo_de_movimiento(fecha: date, tipo: str) -> str:
     return billing.ciclo_de_compra(fecha)
 
 
+def _texto_plano(v) -> str:
+    """Minúsculas y sin tildes. Las hojas que se editan a mano reciben lo que
+    uno escribe naturalmente ('Crédito'), y sin esto caía al valor por defecto
+    en silencio — o sea, un cargo a crédito quedaba registrado como débito."""
+    txt = unicodedata.normalize("NFD", str(v or "").strip().lower())
+    return "".join(c for c in txt if unicodedata.category(c) != "Mn")
+
+
 def _si_no(valor, por_defecto: bool) -> bool:
     """Lee una celda sí/no escrita a mano. Vacía cae en el valor por defecto."""
-    txt = str(valor or "").strip().lower()
+    txt = _texto_plano(valor)
     if not txt:
         return por_defecto
-    return txt not in ("no", "n", "0", "false", "nou")
+    return txt not in ("no", "n", "0", "false")
 
 
 class Store:
@@ -123,7 +132,8 @@ class Store:
         for paso in (self._alinear_fechas_una_vez,
                      self._migrar_signo_ingresos_una_vez,
                      self._migrar_ciclo_inicio_una_vez,
-                     self._colorear_montos_una_vez):
+                     self._colorear_montos_una_vez,
+                     self._formato_hojas_manuales_una_vez):
             try:
                 paso()
             except Exception as e:  # nunca romper el bot por un tema visual
@@ -300,6 +310,48 @@ class Store:
             "categoria": str(reg.get("categoria") or ""),
         }
 
+    def _formato_hojas_manuales_una_vez(self):
+        """Deja presentables las dos hojas que se editan a mano.
+
+        Son las únicas que Matías abre y llena, así que se ganan el encabezado
+        fijo y los formatos: leer 19264 en vez de $19.264 invita a equivocarse
+        justo donde un error se convierte en plata mal contada."""
+        if self.get_config("fmt_manuales_v1") == "1":
+            return
+        cab = {"backgroundColor": {"red": 0.20, "green": 0.29, "blue": 0.37},
+               "textFormat": {"bold": True, "fontSize": 10,
+                              "foregroundColor": {"red": 1, "green": 1, "blue": 1}},
+               "horizontalAlignment": "CENTER",
+               "verticalAlignment": "MIDDLE"}
+        plata = {"numberFormat": {"type": "CURRENCY", "pattern": '"$"#,##0'},
+                 "horizontalAlignment": "RIGHT"}
+        fecha = {"numberFormat": {"type": "DATE", "pattern": "dd-mm-yyyy"},
+                 "horizontalAlignment": "CENTER"}
+        centro = {"horizontalAlignment": "CENTER"}
+
+        self.rec.batch_format([
+            {"range": "A1:G1", "format": cab},
+            {"range": "B2:B", "format": plata},      # monto
+            {"range": "C2:C", "format": centro},     # día
+            {"range": "D2:G", "format": centro},     # tipo, categoría, flags
+        ])
+        self.ciclos.batch_format([
+            {"range": "A1:C1", "format": cab},
+            {"range": "A2:A", "format": centro},
+            {"range": "B2:C", "format": fecha},
+        ])
+        for hoja, anchos in ((self.rec, [(0, 210), (1, 100), (2, 55), (3, 90),
+                                         (4, 150), (5, 90), (6, 70)]),
+                             (self.ciclos, [(0, 90), (1, 110), (2, 110)])):
+            hoja.freeze(rows=1)
+            hoja.spreadsheet.batch_update({"requests": [
+                {"updateDimensionProperties": {
+                    "range": {"sheetId": hoja.id, "dimension": "COLUMNS",
+                              "startIndex": i, "endIndex": i + 1},
+                    "properties": {"pixelSize": px}, "fields": "pixelSize"}}
+                for i, px in anchos]})
+        self.set_config("fmt_manuales_v1", "1")
+
     def _sembrar_ejemplo_recurrente(self):
         """Deja una fila de ejemplo la primera vez, para que se vea cómo se llena.
         Va con monto 0 y activo=no, así queda ignorada por partida doble."""
@@ -350,7 +402,7 @@ class Store:
                 continue
             if not _si_no(r.get("activo"), True):
                 continue
-            tipo = str(r.get("tipo") or "").strip().lower()
+            tipo = _texto_plano(r.get("tipo"))
             salida.append({
                 "nombre": nombre,
                 "monto": monto,

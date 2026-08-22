@@ -28,36 +28,92 @@ def cargar_ciclos(filas) -> None:
     _DECLARADOS = sorted(filas, key=lambda f: f[1])
 
 
-def _proyectar(fecha: date):
-    """Proyecta ciclos hacia adelante desde el último declarado.
+# Feriados de Chile de fecha fija. Solo se usan para correr el corte al día hábil
+# anterior; los movibles (29/06, 12/10, 31/10) se omiten a propósito: su regla de
+# traslado es enredada y marcar un día como feriado cuando no lo es correría el
+# corte de más. Para esos meses está la hoja "Ciclos" como excepción.
+_FERIADOS_FIJOS = {(1, 1), (5, 1), (5, 21), (6, 20), (7, 16), (8, 15),
+                   (9, 18), (9, 19), (11, 1), (12, 8), (12, 25)}
 
-    Mientras no cargues el estado nuevo, el ciclo en curso se estima
-    manteniendo el día de cierre del último conocido. Es una aproximación
-    explícita, y se corrige sola en cuanto agregás la fila real."""
-    ciclo, ini, fin = _DECLARADOS[-1]
-    for _ in range(60):
-        if fecha <= fin:
-            return ciclo, ini, fin
-        ini = fin + timedelta(days=1)
-        anio, mes = _sumar_meses(fin.year, fin.month, 1)
-        fin = date(anio, mes, min(fin.day, calendar.monthrange(anio, mes)[1]))
-        ciclo = f"{fin.year:04d}-{fin.month:02d}"
-    return None
+
+def _domingo_de_pascua(anio: int) -> date:
+    """Algoritmo de Meeus/Jones/Butcher, para ubicar Viernes y Sábado Santo."""
+    a, b, c = anio % 19, anio // 100, anio % 100
+    d, e = b // 4, b % 4
+    f, g = (b + 8) // 25, (b - (b + 8) // 25 + 1) // 3
+    h = (19 * a + b - d - g + 15) % 30
+    i, k = c // 4, c % 4
+    l = (32 + 2 * e + 2 * i - h - k) % 7
+    m = (a + 11 * h + 22 * l) // 451
+    mes = (h + l - 7 * m + 114) // 31
+    return date(anio, mes, (h + l - 7 * m + 114) % 31 + 1)
+
+
+def _es_habil(d: date) -> bool:
+    if d.weekday() >= 5:                       # sábado o domingo
+        return False
+    if (d.month, d.day) in _FERIADOS_FIJOS:
+        return False
+    pascua = _domingo_de_pascua(d.year)
+    return d not in (pascua - timedelta(days=2), pascua - timedelta(days=1))
+
+
+def _cierre_de(anio: int, mes: int) -> date:
+    """Día en que cierra el estado de ese mes: el CORTE_DIA, adelantado al hábil
+    anterior si cae fin de semana o feriado."""
+    dia = min(config.CORTE_DIA, calendar.monthrange(anio, mes)[1])
+    d = date(anio, mes, dia)
+    while not _es_habil(d):
+        d -= timedelta(days=1)
+    return d
+
+
+def _ciclo_de(fecha: date):
+    """(ciclo, inicio, fin) automático que contiene `fecha`.
+
+    El ciclo termina en el cierre de su mes y arranca el día después del cierre
+    del mes anterior. La etiqueta es el mes del cierre, igual que el estado."""
+    anio, mes = fecha.year, fecha.month
+    if fecha > _cierre_de(anio, mes):          # ya cerró: cae en el mes siguiente
+        anio, mes = _sumar_meses(anio, mes, 1)
+    a0, m0 = _sumar_meses(anio, mes, -1)
+    return (f"{anio:04d}-{mes:02d}",
+            _cierre_de(a0, m0) + timedelta(days=1),
+            _cierre_de(anio, mes))
+
+
+def _desde_auto():
+    """Primer día en que rige la regla automática.
+
+    Es el ARRANQUE del ciclo que contiene CORTE_DESDE, no la fecha suelta.
+    Anclar al ciclo completo importa: si el corte cayera en medio de un ciclo,
+    preguntar por un día y preguntar por el inicio de su propio ciclo darían
+    respuestas distintas, y de ahí salían ciclos que se esfumaban del gráfico."""
+    try:
+        return _ciclo_de(date.fromisoformat(config.CORTE_DESDE))[1]
+    except (ValueError, TypeError):
+        return None
+
+
+def _ciclo_automatico(fecha: date):
+    """El ciclo automático, solo desde que rige el corte nuevo."""
+    desde = _desde_auto()
+    if desde is None or fecha < desde:
+        return None                            # historial viejo: regla del día fijo
+    return _ciclo_de(fecha)
 
 
 def _declarado(fecha: date):
-    """(ciclo, inicio, fin) del ciclo declarado que contiene `fecha`, o None.
+    """Ciclo que contiene `fecha`, en orden de prioridad:
 
-    None significa "usá la regla del día fijo": pasa con las fechas anteriores
-    al primer ciclo declarado, así el historial viejo no se mueve de lugar."""
-    if not _DECLARADOS:
-        return None
+      1. la hoja "Ciclos", que es la excepción declarada a mano;
+      2. la regla automática del corte (día 19 corrido al hábil anterior);
+      3. None -> la regla vieja del día fijo, para el historial anterior.
+    """
     for ciclo, ini, fin in _DECLARADOS:
         if ini <= fecha <= fin:
             return ciclo, ini, fin
-    if fecha > _DECLARADOS[-1][2]:
-        return _proyectar(fecha)
-    return None
+    return _ciclo_automatico(fecha)
 
 
 def _sumar_meses(anio: int, mes: int, delta: int) -> tuple[int, int]:

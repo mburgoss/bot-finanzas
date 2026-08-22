@@ -31,8 +31,18 @@ GOOGLE_CREDENTIALS_JSON = os.environ["GOOGLE_CREDENTIALS"]
 SHEET_ID = os.environ["SHEET_ID"]  # el id de la planilla (de la URL)
 
 # --- Reglas de negocio ---
-# Día en que se factura la tarjeta de crédito.
+# Día en que se factura la tarjeta de crédito. Regla vieja, se conserva para el
+# historial anterior a CORTE_DESDE (así los movimientos viejos no cambian de ciclo).
 BILLING_DAY = int(os.environ.get("BILLING_DAY", "22"))
+
+# --- Corte real del estado de cuenta ---
+# El banco cierra el día CORTE_DIA y, si cae fin de semana o feriado, adelanta al
+# día hábil anterior. Verificado contra dos estados: cerró el 19/08 (miércoles) y
+# el 17/09 (porque el 19/09 era sábado y el 18 y 19 son Fiestas Patrias).
+CORTE_DIA = int(os.environ.get("CORTE_DIA", "19"))
+# Desde cuándo rige. Antes de esta fecha se usa BILLING_DAY, para no reasignar de
+# ciclo todo el historial ya cargado.
+CORTE_DESDE = os.environ.get("CORTE_DESDE", "2026-07-23")
 
 # Mapeo de últimos 4 dígitos -> tipo de tarjeta. Ej: "1234:credito,5678:debito"
 # Si un cobro no matchea, se usa lo que diga el propio correo (crédito/débito).
