@@ -622,8 +622,14 @@ def _grafico_ritmo(store, ciclos, dias_ciclo: int, transcurridos: int,
         dias = transcurridos + 1
         series = []
         for lbl, ini, corte, total in ciclos:
-            if series and not total:
-                continue    # un ciclo anterior sin movimientos es una línea en cero
+            # Un ciclo anterior se omite solo si NO tuvo NINGÚN movimiento en todo
+            # el ciclo — o sea, es anterior a que existiera el bot. Antes se
+            # miraba el total RECORTADO y eso hacía desaparecer el mes pasado los
+            # primeros días: con una ventana de un solo día, un ciclo con gastos
+            # reales daba 0 y se caía del gráfico, dejando a la vista uno más
+            # viejo que por casualidad sí había gastado ese día.
+            if series and not _hubo_movimientos(store, ini):
+                continue
             series.append({
                 "etiqueta": _mes_corto(lbl),
                 "valores": grafico.acumular(store.gasto_diario(ini, corte), ini, dias),
@@ -634,10 +640,21 @@ def _grafico_ritmo(store, ciclos, dias_ciclo: int, transcurridos: int,
             series, dias_ciclo,
             f"Ciclo {ciclos[0][0]} · día {dias} de {dias_ciclo}",
             proyeccion=proyeccion, tema=config.GRAFICO_TEMA, bloques=bloques,
-            nota=nota, torta=torta)
+            nota=nota, torta=torta,
+            # Los % recién desde el 4º día, igual que la proyección: comparar
+            # contra uno o dos días del ciclo anterior da números como "−98%"
+            # que asustan y no dicen nada.
+            comparar=transcurridos >= 3)
     except Exception as e:
         print(f"[aviso] no pude generar el gráfico del resumen: {e}")
         return None
+
+
+def _hubo_movimientos(store, inicio_ciclo) -> bool:
+    """True si ese ciclo tuvo movimientos en ALGÚN momento, mirando el ciclo
+    completo y no la ventana recortada a la altura de hoy."""
+    fin = billing.proximo_inicio_de_ciclo(inicio_ciclo) - timedelta(days=1)
+    return bool(store.gasto_neto_por_fecha(inicio_ciclo, fin)[0])
 
 
 def _el_panel_bajara() -> bool:
