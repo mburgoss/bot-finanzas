@@ -50,8 +50,32 @@ def _cuerpo(msg) -> str:
     return ""
 
 
+def _adjuntos(msg) -> list:
+    """[(nombre, bytes)] de los adjuntos del correo.
+
+    Sale gratis: el fetch ya baja el mensaje completo, así que hasta ahora los
+    adjuntos se descargaban y se tiraban. El estado de cuenta viene justamente
+    como adjunto."""
+    if not msg.is_multipart():
+        return []
+    salida = []
+    for parte in msg.walk():
+        disp = str(parte.get("Content-Disposition") or "")
+        nombre = _decode(parte.get_filename())
+        if "attachment" not in disp and not nombre:
+            continue
+        try:
+            datos = parte.get_payload(decode=True)
+        except Exception:
+            continue
+        if datos:
+            salida.append((nombre, datos))
+    return salida
+
+
 def obtener_correos():
-    """Generador de (uid, asunto, remitente, cuerpo) de correos recientes del banco."""
+    """Generador de (uid, asunto, remitente, cuerpo, adjuntos) de correos
+    recientes del banco. `adjuntos` es [(nombre, bytes)]."""
     imap = imaplib.IMAP4_SSL(config.IMAP_HOST)
     imap.login(config.GMAIL_USER, config.GMAIL_APP_PASSWORD)
     imap.select("INBOX")
@@ -86,6 +110,6 @@ def obtener_correos():
         remitente = _decode(msg.get("From"))
         cuerpo = _cuerpo(msg)
         message_id = msg.get("Message-ID") or uid.decode()
-        yield message_id.strip(), asunto, remitente, cuerpo
+        yield message_id.strip(), asunto, remitente, cuerpo, _adjuntos(msg)
 
     imap.logout()

@@ -33,11 +33,22 @@ def _num(v) -> int:
     return int(re.sub(r"[^\d-]", "", str(v)) or 0)
 
 
+# Sheets, si le dejás escribir con USER_ENTERED, convierte '2026-01-21' en una
+# fecha de verdad y después te la devuelve formateada al locale: '21-01-2026'.
+# Y en las hojas que se editan a mano, uno escribe la fecha como se le canta.
+_DDMMAAAA = re.compile(r"^(\d{1,2})[-/](\d{1,2})[-/](\d{4})")
+
+
 def _fecha(v) -> date:
-    """Interpreta una fecha venga como texto ISO o como serial de Sheets."""
+    """Interpreta una fecha venga como serial de Sheets, ISO o día/mes/año."""
     if isinstance(v, (int, float)):
         return date(1899, 12, 30) + timedelta(days=int(v))
-    return date.fromisoformat(str(v)[:10])
+    txt = str(v).strip()
+    m = _DDMMAAAA.match(txt)
+    if m:
+        d, mes, a = (int(x) for x in m.groups())    # día primero: acá es Chile
+        return date(a, mes, d)
+    return date.fromisoformat(txt[:10])
 
 
 def _ciclo(v) -> str:
@@ -289,6 +300,7 @@ class Store:
         """Tras escribir en Movimientos: descarta el caché de datos (y el de
         filas si se agregó/quitó alguna)."""
         self._mov_cache = None
+        self._observando = ""          # se recalcula con las filas nuevas
         if filas_nuevas:
             self._id_row_cache = None
 
@@ -388,6 +400,32 @@ class Store:
                 salida.append((ciclo, ini, fin))
         return salida
 
+    def guardar_ciclo(self, ciclo: str, inicio, fin) -> bool:
+        """Escribe (o corrige) un corte en la hoja 'Ciclos'. True si cambió algo.
+
+        Lo usa el lector de cartola: en vez de copiar a mano las dos fechas del
+        'PRÓXIMO PERÍODO DE FACTURACIÓN', el bot las deja acá solo. Es un upsert
+        por etiqueta de ciclo, así que releer la misma cartola no duplica nada."""
+        fila = [ciclo, inicio.strftime("%Y-%m-%d"), fin.strftime("%Y-%m-%d")]
+        try:
+            filas = self.ciclos.get_all_values()
+        except Exception as e:
+            print(f"[aviso] no pude leer la hoja Ciclos: {e}")
+            return False
+        for i, f in enumerate(filas[1:], start=2):
+            if (f + ["", "", ""])[0].strip()[:7] == ciclo:
+                if [c.strip() for c in (f + ["", "", ""])[:3]] == fila:
+                    return False                   # ya estaba igual
+                # RAW: si Sheets las interpreta como fecha, te las devuelve
+                # formateadas al locale y hay que volver a adivinar el orden.
+                self.ciclos.update(values=[fila], range_name=f"A{i}:C{i}",
+                                   value_input_option="RAW")
+                billing.cargar_ciclos(self.ciclos_declarados())
+                return True
+        self.ciclos.append_row(fila, value_input_option="RAW")
+        billing.cargar_ciclos(self.ciclos_declarados())
+        return True
+
     def recurrentes(self) -> list[dict]:
         """Cargos fijos configurados a mano en la hoja 'Recurrentes'.
 
@@ -415,6 +453,24 @@ class Store:
                 "confirmar": _si_no(r.get("confirmar"), True),
             })
         return salida
+
+    # Prefijos de los movimientos que NO vio el bot: los cargó una persona o
+    # salieron de un estado de cuenta. Los que sí vio traen el Message-ID del
+    # correo, que es siempre '<algo@algo>'.
+    _SINTETICOS = ("backfill:", "eecc:", "manual:", "rec:")
+
+    def observando_desde(self):
+        """Fecha del primer movimiento que el bot leyó de un correo, o None.
+
+        Sirve para distinguir un ciclo sin gastos de un ciclo anterior a que el
+        bot existiera. Los dos suman cero, pero el segundo es un hueco de datos
+        y dibujarlo como una línea en $0 al lado de los otros meses miente."""
+        if getattr(self, "_observando", "") == "":
+            fechas = [_fecha(r["fecha"]) for r in self._registros()
+                      if r.get("fecha") and not str(r.get("message_id") or "")
+                      .startswith(self._SINTETICOS)]
+            self._observando = min(fechas) if fechas else None
+        return self._observando
 
     def message_ids(self) -> set:
         return {str(r.get("message_id")) for r in self._registros() if r.get("message_id")}

@@ -192,24 +192,37 @@ Las porciones son **gasto**, no ingresos: en una dona no se puede dibujar un sec
 negativo, así que un ingreso no aparece como categoría.
 
 ### 📅 Ciclos reales del estado de cuenta
-El banco **no factura un día fijo**. Un estado dice período `23/07 – 19/08` y el
-siguiente `20/08 – 17/09`: los cortes se mueven mes a mes y no hay fórmula que los
-reproduzca. La regla del día 22 es una aproximación que manda al ciclo equivocado
-las compras cercanas al corte.
+El banco **no factura un día fijo**. Los cortes reales, leídos de seis estados de
+cuenta, son `19/02`, `21/04`, `19/05`, `18/06`, `22/07`, `19/08` y `17/09`. No hay
+fórmula que los reproduzca: la regla del día 22 manda al ciclo equivocado las
+compras cercanas al corte, y la del día 19 acierta la mitad de las veces.
 
-**El bot calcula el corte solo.** La regla, verificada contra dos estados de
-cuenta: **cierra el día 19, y si cae fin de semana o feriado se adelanta al día
-hábil anterior**. Cerró el 19/08 (miércoles) y el 17/09 — porque el 19/09 era
-sábado y el 18 y 19 son Fiestas Patrias.
+**Pero el corte siempre está publicado un mes antes.** Cada estado de cuenta trae,
+al final, la línea:
 
-Se configura con `CORTE_DIA` (19) y `CORTE_DESDE`, la fecha a partir de la cual
-rige. Antes de esa fecha se usa `BILLING_DAY`, para no reasignar de ciclo el
-historial ya cargado.
+```
+PRÓXIMO PERÍODO DE FACTURACIÓN   23/07/2026   19/08/2026
+```
 
-La hoja **`Ciclos`** queda solo como **excepción**, para los meses en que el
-banco haga algo que la regla no predice (pasó en julio: cerró el 22 cuando la
-regla daba 17). Se copian del estado, que trae el "PRÓXIMO PERÍODO DE
-FACTURACIÓN":
+Así que el bot **lee la cartola solo**. Cuando llega el correo del banco con el PDF
+adjunto, `cartola.py` lo abre (viene con clave, va en el secret `CARTOLA_CLAVE`),
+saca el período que está facturando y el del mes siguiente, y los escribe en la
+hoja **`Ciclos`**. Después avisa por Telegram qué ciclos quedaron fijados. El corte
+deja de ser una regla adivinada y pasa a ser el dato que el banco ya dio.
+
+El PDF es contenido que llega de afuera, así que se lo trata como dato: solo se le
+sacan cuatro fechas con una expresión regular y se validan (un ciclo dura entre 20
+y 40 días y no puede caer a años de distancia). Nada de lo que diga el PDF se
+ejecuta, y la clave nunca se imprime ni se guarda en la planilla.
+
+Si el correo no llega, o falta el secret, quedan dos redes abajo:
+
+1. **La regla automática**: cierra el día `CORTE_DIA` (19) y, si cae fin de semana
+   o feriado, se adelanta al día hábil anterior. Rige desde `CORTE_DESDE`.
+2. **La regla vieja del día fijo** (`BILLING_DAY`), solo para fechas anteriores a
+   `CORTE_DESDE`, para no reasignar de ciclo el historial ya cargado.
+
+La hoja `Ciclos` también se puede llenar a mano — es la misma que escribe el bot:
 
 | ciclo | inicio | fin |
 |---|---|---|
@@ -352,6 +365,7 @@ Necesitas 4 cosas: **Telegram**, **Gmail**, **Google Sheets** y **GitHub**.
    | `SHEET_ID` | id de la planilla |
    | `BILLING_DAY` | `22` |
    | `DEST_ACCOUNT` | tu número de cuenta, solo dígitos (ej: `001234567890`) |
+   | `CARTOLA_CLAVE` | clave del PDF del estado de cuenta (para fijar los ciclos solo) |
    | `CARD_MAP` | (opcional) `1234:credito` |
    | `RESUMEN_HORA` | (opcional) hora del resumen nocturno, 0–23 (por defecto `22`) |
 
@@ -380,7 +394,8 @@ src/
   config.py        # lee los secretos/variables de entorno
   email_reader.py  # IMAP: trae correos por remitente y por asunto
   parser.py        # compras, transferencias enviadas e ingresos (multi-banco)
-  billing.py       # ciclo de facturación (día 22) y reparto de cuotas
+  billing.py       # ciclo de facturación (corte real) y reparto de cuotas
+  cartola.py       # abre el PDF del estado de cuenta y saca el próximo corte
   sheets.py        # lee/escribe Google Sheets (ids estables, estado, categorías)
   telegram_bot.py  # envía avisos con botones, edita mensajes y lee updates
   main.py          # orquesta todo (esto ejecuta GitHub Actions)

@@ -53,6 +53,12 @@ CORTE_DIA = int(os.environ.get("CORTE_DIA", "19"))
 # ciclo todo el historial ya cargado.
 CORTE_DESDE = os.environ.get("CORTE_DESDE", "2026-07-23")
 
+# Clave del PDF del estado de cuenta que manda el banco. Va como secret de
+# GitHub (CARTOLA_CLAVE), NUNCA escrita acá: el repo es público. Sin ella el bot
+# funciona igual, solo que no puede leer la cartola y los cortes hay que
+# cargarlos a mano en la hoja "Ciclos".
+CARTOLA_CLAVE = os.environ.get("CARTOLA_CLAVE", "")
+
 # Mapeo de últimos 4 dígitos -> tipo de tarjeta. Ej: "1234:credito,5678:debito"
 # Si un cobro no matchea, se usa lo que diga el propio correo (crédito/débito).
 CARD_MAP = {}

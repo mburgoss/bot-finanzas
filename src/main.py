@@ -20,7 +20,7 @@ import requests
 
 # `grafico` (y con él matplotlib) se importa dentro de _grafico_ritmo, no acá:
 # si falta la dependencia, se pierde el gráfico pero el bot sigue funcionando.
-from . import billing, config, email_reader, telegram_bot
+from . import billing, cartola, config, email_reader, telegram_bot
 from .formato import delta_pct as _delta_pct
 from .formato import mes_corto as _mes_corto
 from .formato import nombre_ciclo as _nombre_ciclo
@@ -574,17 +574,68 @@ def _contiene_cuenta(cuerpo: str) -> bool:
     return len(sin_ceros) >= 8 and sin_ceros in digitos
 
 
+def _revisar_cartola(store: Store, message_id, asunto, adjuntos) -> bool:
+    """Si el correo trae el estado de cuenta, deja sus cortes en la hoja 'Ciclos'.
+
+    Devuelve True cuando el correo ERA la cartola, para no intentar leerlo
+    después como si fuera un movimiento (no lo es: es el resumen del mes).
+
+    Acá está la gracia del asunto: el banco no factura un día fijo, pero cada
+    cartola publica el período del mes siguiente. Leyéndola, el corte deja de
+    ser una regla adivinada y pasa a ser el dato que el banco ya dio."""
+    pdfs = [(n, d) for n, d in adjuntos if cartola.parece_cartola(asunto, n)]
+    if not pdfs:
+        return False
+
+    # Releer la misma cartola en cada corrida del cron sería tirar tiempo: el
+    # lookback la deja a la vista por días. Se recuerdan las últimas.
+    vistas = [x for x in store.get_config("cartolas_vistas", "").split("|") if x]
+    if message_id in vistas:
+        return True
+
+    ciclos = []
+    for _nombre, datos in pdfs:
+        ciclos += cartola.ciclos_del_pdf(datos, config.CARTOLA_CLAVE)
+    if not ciclos:
+        # Puede ser que falte la clave, o que el PDF venga con otro formato. No
+        # se marca como vista: si mañana se configura el secret, se reintenta.
+        print("[cartola] llegó un estado de cuenta pero no pude sacarle el período")
+        return True
+
+    avisos = []
+    for ciclo, ini, fin in ciclos:
+        if store.guardar_ciclo(ciclo, ini, fin):
+            avisos.append(f"<b>{_nombre_ciclo(ciclo).capitalize()}</b>: "
+                          f"{ini.strftime('%d/%m')} al {fin.strftime('%d/%m')}")
+    store.set_config("cartolas_vistas", "|".join((vistas + [message_id])[-5:]))
+
+    print(f"[cartola] leída: {len(ciclos)} ciclo(s), {len(avisos)} actualizado(s)")
+    if avisos:
+        telegram_bot.enviar(
+            "📄 <b>Llegó el estado de cuenta</b>\n"
+            "Ciclos de facturación actualizados:\n· "
+            + ("\n· ".join(avisos)))
+    return True
+
+
 def procesar_correos(store: Store):
     vistos = store.message_ids()
     nuevos = 0
     # Contadores de diagnóstico: sin esto, un correo que el parser no entiende
     # se descarta sin dejar rastro y no hay forma de saber dónde se perdió.
     # Van como números a propósito: el repo es público y los logs también.
-    stats = {"total": 0, "ya_vistos": 0, "ajenos": 0, "sin_parsear": 0}
-    for message_id, asunto, remitente, cuerpo in email_reader.obtener_correos():
+    stats = {"total": 0, "ya_vistos": 0, "ajenos": 0, "sin_parsear": 0, "cartola": 0}
+    for message_id, asunto, remitente, cuerpo, adjuntos in email_reader.obtener_correos():
         stats["total"] += 1
         if message_id in vistos:
             stats["ya_vistos"] += 1
+            continue
+
+        # El estado de cuenta se mira antes del filtro de remitente: el banco lo
+        # manda desde una casilla distinta a la de los avisos de compra, y el PDF
+        # se autentica solo (abre con la clave y trae la línea del período).
+        if _revisar_cartola(store, message_id, asunto, adjuntos):
+            stats["cartola"] += 1
             continue
 
         # Filtro clave: si el correo NO es de un remitente conocido y NO contiene
@@ -636,7 +687,8 @@ def procesar_correos(store: Store):
         vistos.add(message_id)
         nuevos += 1
     print(f"[correos] revisados={stats['total']} ya_vistos={stats['ya_vistos']} "
-          f"ajenos={stats['ajenos']} sin_parsear={stats['sin_parsear']} nuevos={nuevos}")
+          f"ajenos={stats['ajenos']} cartola={stats['cartola']} "
+          f"sin_parsear={stats['sin_parsear']} nuevos={nuevos}")
     return nuevos
 
 
@@ -711,8 +763,20 @@ def _grafico_ritmo(store, ciclos, dias_ciclo: int, transcurridos: int,
 
 
 def _hubo_movimientos(store, inicio_ciclo) -> bool:
-    """True si ese ciclo tuvo movimientos en ALGÚN momento, mirando el ciclo
-    completo y no la ventana recortada a la altura de hoy."""
+    """True si vale la pena dibujar ese ciclo en la comparación.
+
+    Dos motivos para dejarlo afuera, y son distintos:
+
+      * el bot todavía no estaba mirando. Ahí el cero no significa "no gastó",
+        significa "no sabemos", y una línea plana en $0 al lado de las otras se
+        lee como un mes sin gastos que nunca existió;
+      * el ciclo existió y de verdad no tuvo ningún movimiento.
+
+    Lo que NO se mira es el total recortado a la altura de hoy: con una ventana
+    de un día, un ciclo con gastos reales daba 0 y se caía del gráfico."""
+    desde = store.observando_desde()
+    if desde and inicio_ciclo < desde:
+        return False
     fin = billing.proximo_inicio_de_ciclo(inicio_ciclo) - timedelta(days=1)
     return bool(store.gasto_neto_por_fecha(inicio_ciclo, fin)[0])
 
@@ -901,7 +965,7 @@ def _porciones(store, desde, hasta):
     return tuple(positivas[:MAX_PORCIONES]) + (("Otras", cola),)
 
 
-def _bloques_panel(n: dict):
+def _bloques_panel(n: dict, cierre=None):
     """Las dos tablas que van dibujadas AL PIE DE LA IMAGEN.
 
     Las dos arrancan por la misma fila a propósito: es el término que ambos
@@ -919,7 +983,10 @@ def _bloques_panel(n: dict):
             ("Crédito comprado", n["credito"], False),
             ("Gastado hasta hoy", n["gastado"], True),
         ]),
-        (f"Lo que te cobran el {config.BILLING_DAY}", [
+        # El corte real, no el día fijo viejo: el banco cierra cuando dice la
+        # cartola (19/08, 17/09...), así que ponerle "el 22" era mentirle a la
+        # única línea del panel que dice cuándo se paga.
+        (f"Lo que te cobran el {cierre.strftime('%d/%m') if cierre else config.BILLING_DAY}", [
             compartida,
             ("Cuotas del ciclo", n["cuotas"], False),
             ("Total mes", n["total_mes"], True),
@@ -953,6 +1020,7 @@ def _imagen_del_ciclo(store, ciclos, dias_ciclo, transcurridos, n):
     exactamente la misma imagen y no dos versiones que puedan divergir."""
     totales = [store.gasto_neto_por_fecha(ini, corte)[0] for _lbl, ini, corte in ciclos]
     total_act = totales[0]
+    cierre = billing.proximo_inicio_de_ciclo(ciclos[0][1]) - timedelta(days=1)
     proyeccion = (total_act * dias_ciclo // (transcurridos + 1)
                   if total_act > 0 and 3 <= transcurridos < dias_ciclo - 1 else None)
     porciones = n["categorias"]
@@ -962,7 +1030,7 @@ def _imagen_del_ciclo(store, ciclos, dias_ciclo, transcurridos, n):
                          [(lbl, ini, corte, tot)
                           for (lbl, ini, corte), tot in zip(ciclos, totales)],
                          dias_ciclo, transcurridos, proyeccion,
-                         bloques=_bloques_panel(n),
+                         bloques=_bloques_panel(n, cierre),
                          nota=(f"«Débito y transf.» va neto de {_pesos(abs(n['ingresos']))} "
                                f"de ingresos recibidos" if n["ingresos"] else None),
                          torta=torta)

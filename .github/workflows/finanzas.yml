@@ -57,4 +57,7 @@ jobs:
           BILLING_DAY: ${{ secrets.BILLING_DAY }}
           CARD_MAP: ${{ secrets.CARD_MAP }}
           DEST_ACCOUNT: ${{ secrets.DEST_ACCOUNT }}
+          # Clave del PDF del estado de cuenta. Sin este secret el bot
+          # anda igual, pero no puede leer la cartola ni fijar el ciclo solo.
+          CARTOLA_CLAVE: ${{ secrets.CARTOLA_CLAVE }}
         run: python -m src.main
