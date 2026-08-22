@@ -89,9 +89,14 @@ def obtener_correos():
             estado, datos = imap.search(None, f'(SINCE {desde} FROM "{remitente}")')
             if estado == "OK" and datos[0]:
                 uids.update(datos[0].split())
-        # 2) Además, cualquier correo cuyo asunto hable de transferencia
-        #    (así detectamos ingresos de bancos que no están en la lista).
-        for palabra in ("transferencia", "transferido", "abono"):
+        # 2) Además, por asunto. Dos motivos distintos:
+        #    - "transferencia/transferido/abono": ingresos de bancos que no están
+        #      en la lista de remitentes;
+        #    - "estado de cuenta/cartola": el PDF del que sale el corte real del
+        #      ciclo. El banco lo manda desde una casilla distinta a la de los
+        #      avisos de compra, así que buscarlo solo por remitente no alcanza.
+        for palabra in ("transferencia", "transferido", "abono",
+                        "estado de cuenta", "cartola"):
             estado, datos = imap.search(None, f'(SINCE {desde} SUBJECT "{palabra}")')
             if estado == "OK" and datos[0]:
                 uids.update(datos[0].split())

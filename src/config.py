@@ -13,8 +13,20 @@ IMAP_HOST = "imap.gmail.com"
 # Ej: "avisos@tubanco.cl", "notificaciones@tubanco.cl"
 BANK_SENDERS = [s.strip().lower() for s in os.environ.get("BANK_SENDERS", "").split(",") if s.strip()]
 
+def _entero(nombre, por_defecto):
+    """Entero de una variable de entorno, tolerando que venga vacía.
+
+    Los inputs de un workflow_dispatch llegan como "" en las corridas del cron,
+    y un int("") tumbaba la corrida entera."""
+    try:
+        return int(str(os.environ.get(nombre, "")).strip())
+    except ValueError:
+        return por_defecto
+
+
 # Cuántos días hacia atrás mirar como máximo (por si el bot estuvo caído).
-LOOKBACK_DAYS = int(os.environ.get("LOOKBACK_DAYS", "3"))
+# Se puede subir para una corrida suelta desde el input del workflow.
+LOOKBACK_DAYS = _entero("LOOKBACK_DAYS", 3)
 
 # Tu número de cuenta (solo dígitos). Un correo que NO viene de un remitente
 # conocido solo se procesa si contiene este número (así una transferencia real
@@ -33,7 +45,7 @@ SHEET_ID = os.environ["SHEET_ID"]  # el id de la planilla (de la URL)
 # --- Reglas de negocio ---
 # Día en que se factura la tarjeta de crédito. Regla vieja, se conserva para el
 # historial anterior a CORTE_DESDE (así los movimientos viejos no cambian de ciclo).
-BILLING_DAY = int(os.environ.get("BILLING_DAY", "22"))
+BILLING_DAY = _entero("BILLING_DAY", 22)
 
 # --- Corte real del estado de cuenta ---
 # Aproximación: el banco cierra el día CORTE_DIA y, si cae fin de semana o
@@ -48,7 +60,7 @@ BILLING_DAY = int(os.environ.get("BILLING_DAY", "22"))
 # "Ciclos": cada estado de cuenta trae el "PRÓXIMO PERÍODO DE FACTURACIÓN" con
 # las dos fechas del mes que viene, así que copiarlas ahí una vez al mes es la
 # única fuente confiable. La regla automática solo tapa los huecos.
-CORTE_DIA = int(os.environ.get("CORTE_DIA", "19"))
+CORTE_DIA = _entero("CORTE_DIA", 19)
 # Desde cuándo rige. Antes de esta fecha se usa BILLING_DAY, para no reasignar de
 # ciclo todo el historial ya cargado.
 CORTE_DESDE = os.environ.get("CORTE_DESDE", "2026-07-23")
@@ -71,7 +83,7 @@ for pair in os.environ.get("CARD_MAP", "").split(","):
 TIMEZONE = os.environ.get("TIMEZONE", "America/Santiago")
 
 # Hora local (0-23) del resumen nocturno automático por Telegram.
-RESUMEN_HORA = int(os.environ.get("RESUMEN_HORA", "22"))
+RESUMEN_HORA = _entero("RESUMEN_HORA", 22)
 
 # Tema del gráfico del resumen: "claro" u "oscuro" (ver src/grafico.py).
 GRAFICO_TEMA = os.environ.get("GRAFICO_TEMA", "claro").strip().lower()
@@ -81,7 +93,7 @@ PANEL_ACTIVO = os.environ.get("PANEL_ACTIVO", "1").strip().lower() not in ("0", 
 # Cada cuántos minutos refrescar SOLO el sello de hora cuando los números no
 # cambiaron. Cualquier cambio real (movimiento, anulación, cuotas) se refleja en
 # la corrida siguiente sin esperar esto: el disparador es el contenido, no el reloj.
-PANEL_MINUTOS = int(os.environ.get("PANEL_MINUTOS", "15"))
+PANEL_MINUTOS = _entero("PANEL_MINUTOS", 15)
 
 # Cuántos mensajes tienen que pasar en el chat para que el panel se BAJE al
 # final. Editar un mensaje no lo mueve, así que sin esto el panel quedaría con el
@@ -93,7 +105,7 @@ PANEL_MINUTOS = int(os.environ.get("PANEL_MINUTOS", "15"))
 #         borrar un mensaje propio.
 #   >1 -> baja cada N mensajes: menos llamadas a la API, algo más de scroll.
 #   0  -> se queda quieto donde nació, y ahí sí se fija arriba del chat.
-PANEL_MOVER_TRAS = int(os.environ.get("PANEL_MOVER_TRAS", "1"))
+PANEL_MOVER_TRAS = _entero("PANEL_MOVER_TRAS", 1)
 
 # Vista previa a pedido: manda el resumen del día sin esperar a RESUMEN_HORA y
 # sin marcar el día como enviado. Se activa desde el input del workflow.

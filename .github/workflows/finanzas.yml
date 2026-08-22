@@ -14,6 +14,10 @@ on:
         type: choice
         options: [claro, oscuro]
         default: claro
+      lookback_dias:
+        description: "Días de correo hacia atrás en esta corrida (vacío = el de siempre). Sirve para que reintente una cartola que ya pasó."
+        type: string
+        default: ""
 
 # El token automático no necesita escribir nada (mínimo privilegio).
 permissions:
@@ -45,6 +49,8 @@ jobs:
           # sin forzar. Solo cambian cuando se ejecuta a mano desde Actions.
           GRAFICO_TEMA: ${{ inputs.tema || 'claro' }}
           FORZAR_RESUMEN: ${{ inputs.forzar_resumen }}
+          # Vacío en el cron: manda LOOKBACK_DAYS por defecto (3 días).
+          LOOKBACK_DAYS: ${{ inputs.lookback_dias }}
           PANEL_MINUTOS: "15"          # solo refresca el sello de hora; los cambios salen al toque
           PANEL_MOVER_TRAS: "1"        # 1 = el panel queda siempre pegado abajo del último mensaje
           GMAIL_USER: ${{ secrets.GMAIL_USER }}
