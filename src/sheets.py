@@ -56,6 +56,10 @@ COL = {nombre: i + 1 for i, nombre in enumerate(MOV_HEADERS)}  # nombre -> colum
 # de servicios). Se editan a mano en la planilla.
 REC_HEADERS = ["nombre", "monto", "dia", "tipo", "categoria", "confirmar", "activo"]
 
+# Cortes REALES del estado de cuenta. El banco no factura un día fijo, así que
+# se copian a mano de cada estado ("PERÍODO FACTURADO" y "PRÓXIMO PERÍODO").
+CIC_HEADERS = ["ciclo", "inicio", "fin"]
+
 
 def _client() -> gspread.Client:
     info = json.loads(config.GOOGLE_CREDENTIALS_JSON)
@@ -96,6 +100,9 @@ class Store:
         self.cat = self._hoja("Categorías", ["Categoría"])
         self.rec = self._hoja("Recurrentes", REC_HEADERS)
         self._sembrar_ejemplo_recurrente()
+        self.ciclos = self._hoja("Ciclos", CIC_HEADERS)
+        # Antes de _setup_visual: la migración de ciclo_inicio ya usa estas fechas.
+        billing.cargar_ciclos(self.ciclos_declarados())
         self._asegurar_columna_categoria()  # crítico: debe existir antes de escribir filas
         self._setup_visual()
 
@@ -303,6 +310,31 @@ class Store:
                     value_input_option="RAW")
         except Exception as e:
             print(f"[aviso] no pude sembrar el ejemplo de Recurrentes: {e}")
+
+    def ciclos_declarados(self) -> list[tuple]:
+        """Cortes de facturación reales, leídos de la hoja 'Ciclos'.
+
+        Estricto a propósito: una fila torcida acá movería movimientos de ciclo
+        y descuadraría los totales, así que se exige 'YYYY-MM' y dos fechas
+        válidas con inicio <= fin. Lo que no cumple se ignora y esa fecha cae en
+        la regla del día fijo, que es el comportamiento anterior."""
+        salida = []
+        try:
+            filas = self.ciclos.get_all_records()
+        except Exception as e:
+            print(f"[aviso] no pude leer los ciclos declarados: {e}")
+            return salida
+        for r in filas:
+            ciclo = str(r.get("ciclo") or "").strip()[:7]
+            if not re.fullmatch(r"\d{4}-\d{2}", ciclo):
+                continue
+            try:
+                ini, fin = _fecha(r.get("inicio")), _fecha(r.get("fin"))
+            except Exception:
+                continue
+            if ini <= fin:
+                salida.append((ciclo, ini, fin))
+        return salida
 
     def recurrentes(self) -> list[dict]:
         """Cargos fijos configurados a mano en la hoja 'Recurrentes'.

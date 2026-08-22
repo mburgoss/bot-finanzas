@@ -191,6 +191,32 @@ colores están validados para daltonismo (peor par vecino: ΔE 9,1 en protanopí
 Las porciones son **gasto**, no ingresos: en una dona no se puede dibujar un sector
 negativo, así que un ingreso no aparece como categoría.
 
+### 📅 Ciclos reales del estado de cuenta
+El banco **no factura un día fijo**. Un estado dice período `23/07 – 19/08` y el
+siguiente `20/08 – 17/09`: los cortes se mueven mes a mes y no hay fórmula que los
+reproduzca. La regla del día 22 es una aproximación que manda al ciclo equivocado
+las compras cercanas al corte.
+
+Por eso los cortes se copian a mano en la hoja **`Ciclos`** — el propio estado de
+cuenta trae el **"PRÓXIMO PERÍODO DE FACTURACIÓN"**, así que es copiar dos fechas
+una vez al mes:
+
+| ciclo | inicio | fin |
+|---|---|---|
+| 2026-08 | 2026-07-23 | 2026-08-19 |
+| 2026-09 | 2026-08-20 | 2026-09-17 |
+
+- **Las fechas anteriores al primer ciclo declarado siguen con la regla del día
+  fijo**, así el historial viejo no se mueve de lugar.
+- **Más allá del último declarado** el ciclo se proyecta manteniendo el día de
+  cierre conocido. Es una estimación explícita y se corrige sola en cuanto
+  agregás la fila real.
+- La **etiqueta** del ciclo no cambia: sigue siendo el mes de la fecha de cierre,
+  igual que antes y que el estado de cuenta.
+- Una fila torcida movería movimientos de ciclo, así que el lector es estricto:
+  exige `YYYY-MM` y dos fechas válidas con `inicio <= fin`. Lo que no cumple se
+  ignora y esa fecha cae en la regla del día fijo.
+
 ### 🔁 Cargos recurrentes
 Para lo que se cobra **todos los meses igual** y no llega por correo (o llega en
 un formato que no se puede leer: arriendo, suscripciones, boletas de servicios
