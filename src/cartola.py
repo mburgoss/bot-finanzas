@@ -41,8 +41,10 @@ _FACTURADO = re.compile(
 # de cuenta. No es seguridad — la prueba de verdad es que el PDF abra con la
 # clave y traiga la línea del período —, es no ponerse a descifrar cada PDF que
 # llegue al correo.
-_PISTAS = ("estado de cuenta", "estadodecuenta", "eecc", "cartola",
-           "tarjeta de credito", "tarjeta de crédito", "tarjetavisa")
+# Ojo con qué se pone acá: "tarjeta de crédito" estuvo un rato y era un error,
+# porque es el asunto de CUALQUIER aviso de compra del banco. Solo términos que
+# aparezcan en un estado de cuenta y en nada más.
+_PISTAS = ("estado de cuenta", "estadodecuenta", "eecc", "cartola", "tarjetavisa")
 
 # Un estado de cuenta pesa cientos de KB. Más que esto es otra cosa.
 _MAX_BYTES = 8 * 1024 * 1024

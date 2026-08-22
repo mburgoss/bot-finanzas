@@ -266,7 +266,17 @@ class Store:
         self._cfg_cache[clave] = str(valor)
 
     def _next_id(self) -> int:
-        return int(self.get_config("next_id", "1") or "1")
+        """Próximo id libre: el contador de Config, pero nunca por debajo del id
+        más alto que ya está en la planilla.
+
+        El contador solo no alcanza. Si alguien agrega una fila a mano — pasó:
+        una carga del estado de cuenta — el contador queda atrás y el bot le da
+        a un movimiento nuevo un id que ya existe. Y con dos filas del mismo id,
+        obtener_movimiento() devuelve la PRIMERA, así que el aviso de Telegram
+        describe la fila equivocada y los botones editan la que no es."""
+        contador = int(self.get_config("next_id", "1") or "1")
+        usados = [int(v) for v in self.mov.col_values(COL["id"])[1:] if str(v).strip().isdigit()]
+        return max(contador, max(usados) + 1) if usados else contador
 
     # --- Categorías ---
     def categorias(self) -> list[tuple[str, str]]:

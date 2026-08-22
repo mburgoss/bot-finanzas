@@ -597,10 +597,14 @@ def _revisar_cartola(store: Store, message_id, asunto, adjuntos) -> bool:
     for _nombre, datos in pdfs:
         ciclos += cartola.ciclos_del_pdf(datos, config.CARTOLA_CLAVE)
     if not ciclos:
-        # Puede ser que falte la clave, o que el PDF venga con otro formato. No
-        # se marca como vista: si mañana se configura el secret, se reintenta.
-        print("[cartola] llegó un estado de cuenta pero no pude sacarle el período")
-        return True
+        # Puede ser que falte la clave, que el PDF venga con otro formato, o que
+        # el correo ni siquiera fuera una cartola y solo lo pareciera. Devuelve
+        # False a propósito: el correo sigue su camino normal y, si era un
+        # movimiento, se registra igual. Tragárselo acá lo perdía para siempre.
+        # Tampoco se marca como visto: si mañana se configura el secret, reintenta.
+        print("[cartola] un adjunto parecía el estado de cuenta pero no pude "
+              "sacarle el período; sigue como correo normal")
+        return False
 
     avisos = []
     for ciclo, ini, fin in ciclos:
