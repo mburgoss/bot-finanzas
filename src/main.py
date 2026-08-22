@@ -8,6 +8,7 @@ Flujo:
   3. Regenera el resumen por ciclo y el gasto por categoría.
 """
 
+import calendar
 import hashlib
 import re
 import time
@@ -156,6 +157,8 @@ def _render_movimiento(store, reg):
                       "para que cuente")
     elif anulado:
         lineas.append("<b>Eliminado</b> — no cuenta en los totales")
+    if str(reg.get("message_id") or "").startswith("rec:"):
+        lineas.append("🔁 <i>Cargo recurrente</i>")
     if tipo == "credito":
         lineas.append(f"Cuotas: <b>{int(reg.get('num_cuotas') or 1)}</b>")
     if categorizable:
@@ -487,6 +490,67 @@ def procesar_comandos(store: Store) -> int:
     if nuevo_offset != offset:
         store.set_config("telegram_offset", nuevo_offset)
     return del_usuario
+
+
+def _fecha_en_ciclo(inicio: date, fin: date, dia: int) -> date:
+    """La fecha del ciclo [inicio, fin] que cae en el día del mes `dia`.
+
+    Un ciclo cruza dos meses (del 22 al 21): los días desde el de facturación en
+    adelante caen en el primer mes y el resto en el segundo. Si ese día no existe
+    en el mes que le toca (31 en febrero), se usa el último día de ese mes."""
+    base = inicio if dia >= inicio.day else fin
+    ultimo = calendar.monthrange(base.year, base.month)[1]
+    d = date(base.year, base.month, min(dia, ultimo))
+    return min(max(d, inicio), fin)
+
+
+def procesar_recurrentes(store, hoy: date) -> int:
+    """Registra los cargos fijos del ciclo que ya vencieron y todavía no están.
+
+    Cada uno se identifica con un uid 'rec:<nombre>:<ciclo>' guardado en la misma
+    columna message_id que usan los correos, así el bot puede correr mil veces al
+    día sin duplicar nada.
+
+    Los que piden confirmación nacen anulados: llegan con los mismos botones que
+    cualquier movimiento, corregís el monto si cambió y los sacás de eliminado.
+    """
+    try:
+        recurrentes = store.recurrentes()
+    except Exception as e:
+        # La hoja la edita una persona; que esté rara no puede tumbar la corrida.
+        print(f"[aviso] no pude leer los recurrentes: {e}")
+        return 0
+    if not recurrentes:
+        return 0
+
+    inicio = billing.inicio_de_ciclo(hoy)
+    fin = billing.proximo_inicio_de_ciclo(hoy) - timedelta(days=1)
+    ciclo = billing.ciclo_de_compra(hoy)
+    vistos = store.message_ids()
+    creados = 0
+
+    for rec in recurrentes:
+        uid = f"rec:{rec['nombre'].strip().lower()}:{ciclo}"
+        if uid in vistos:
+            continue
+        fecha = _fecha_en_ciclo(inicio, fin, rec["dia"])
+        if fecha > hoy:
+            continue        # en este ciclo todavía no le toca
+        mov = Movimiento(fecha=fecha, comercio=rec["nombre"], monto=rec["monto"],
+                         digitos="", tipo=rec["tipo"], uid=uid)
+        mov_id = store.agregar_movimiento(mov)
+        if rec["categoria"]:
+            store.set_categoria(mov_id, rec["categoria"])
+        if rec["confirmar"]:
+            store.eliminar_movimiento(mov_id)
+        reg = store.obtener_movimiento(mov_id)
+        if reg:
+            texto, teclado = _render_movimiento(store, reg)
+            telegram_bot.enviar(texto, teclado)
+        creados += 1
+    if creados:
+        print(f"[recurrentes] {creados} cargo(s) fijo(s) del ciclo {ciclo}")
+    return creados
 
 
 def _de_remitente_conocido(remitente: str) -> bool:
@@ -1091,6 +1155,7 @@ def main():
     store = _crear_store()
     del_usuario = procesar_comandos(store)
     nuevos = procesar_correos(store)
+    nuevos += procesar_recurrentes(store, _ahora_local().date())
     if nuevos:
         try:
             store.regenerar_resumen()

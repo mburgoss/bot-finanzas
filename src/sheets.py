@@ -52,6 +52,10 @@ MOV_HEADERS = [
 ]
 COL = {nombre: i + 1 for i, nombre in enumerate(MOV_HEADERS)}  # nombre -> columna (1-based)
 
+# Cargos fijos que se repiten cada ciclo (arriendo, suscripciones, boletas
+# de servicios). Se editan a mano en la planilla.
+REC_HEADERS = ["nombre", "monto", "dia", "tipo", "categoria", "confirmar", "activo"]
+
 
 def _client() -> gspread.Client:
     info = json.loads(config.GOOGLE_CREDENTIALS_JSON)
@@ -68,6 +72,14 @@ def ciclo_de_movimiento(fecha: date, tipo: str) -> str:
     return billing.ciclo_de_compra(fecha)
 
 
+def _si_no(valor, por_defecto: bool) -> bool:
+    """Lee una celda sí/no escrita a mano. Vacía cae en el valor por defecto."""
+    txt = str(valor or "").strip().lower()
+    if not txt:
+        return por_defecto
+    return txt not in ("no", "n", "0", "false", "nou")
+
+
 class Store:
     def __init__(self):
         # Cachés para NO releer la planilla en cada acción (evita el error 429
@@ -82,6 +94,8 @@ class Store:
         self.cfg = self._hoja("Config", ["clave", "valor"])
         self.resumen = self._hoja("Resumen", ["Año", "Mes", "credito", "debito_transf", "total"])
         self.cat = self._hoja("Categorías", ["Categoría"])
+        self.rec = self._hoja("Recurrentes", REC_HEADERS)
+        self._sembrar_ejemplo_recurrente()
         self._asegurar_columna_categoria()  # crítico: debe existir antes de escribir filas
         self._setup_visual()
 
@@ -278,6 +292,45 @@ class Store:
             "estado": str(reg.get("estado") or ""),
             "categoria": str(reg.get("categoria") or ""),
         }
+
+    def _sembrar_ejemplo_recurrente(self):
+        """Deja una fila de ejemplo la primera vez, para que se vea cómo se llena.
+        Va con monto 0 y activo=no, así queda ignorada por partida doble."""
+        try:
+            if len(self.rec.get_all_values()) <= 1:
+                self.rec.append_row(
+                    ["Ejemplo — podés borrar esta fila", 0, 5, "debito", "Ocio", "sí", "no"],
+                    value_input_option="RAW")
+        except Exception as e:
+            print(f"[aviso] no pude sembrar el ejemplo de Recurrentes: {e}")
+
+    def recurrentes(self) -> list[dict]:
+        """Cargos fijos configurados a mano en la hoja 'Recurrentes'.
+
+        Las filas incompletas se saltean en silencio: la hoja la edita una
+        persona y una fila a medio llenar no puede tumbar la corrida."""
+        salida = []
+        for r in self.rec.get_all_records():
+            nombre = str(r.get("nombre") or "").strip()
+            monto = _num(r.get("monto"))
+            dia = _num(r.get("dia"))
+            if not nombre or monto <= 0 or not 1 <= dia <= 31:
+                continue
+            if not _si_no(r.get("activo"), True):
+                continue
+            tipo = str(r.get("tipo") or "").strip().lower()
+            salida.append({
+                "nombre": nombre,
+                "monto": monto,
+                "dia": dia,
+                "tipo": tipo if tipo in ("credito", "debito") else "debito",
+                "categoria": str(r.get("categoria") or "").strip(),
+                # Por defecto SÍ pide confirmación: un monto que en realidad varía
+                # entrando solo ensucia los totales sin que nadie se entere, y eso
+                # es peor que un toque de más una vez al mes.
+                "confirmar": _si_no(r.get("confirmar"), True),
+            })
+        return salida
 
     def message_ids(self) -> set:
         return {str(r.get("message_id")) for r in self._registros() if r.get("message_id")}

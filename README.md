@@ -191,6 +191,34 @@ colores están validados para daltonismo (peor par vecino: ΔE 9,1 en protanopí
 Las porciones son **gasto**, no ingresos: en una dona no se puede dibujar un sector
 negativo, así que un ingreso no aparece como categoría.
 
+### 🔁 Cargos recurrentes
+Para lo que se cobra **todos los meses igual** y no llega por correo (o llega en
+un formato que no se puede leer: arriendo, suscripciones, boletas de servicios
+cuyo monto está dentro de un PDF).
+
+Se configuran a mano en la hoja **`Recurrentes`** de la planilla:
+
+| nombre | monto | dia | tipo | categoria | confirmar | activo |
+|---|---|---|---|---|---|---|
+| Acepta — boleta | 12900 | 11 | debito | Hogar y servicios | sí | sí |
+| Netflix | 9900 | 5 | credito | Ocio | no | sí |
+
+- **`dia`** es el día del mes. El bot lo ubica solo dentro del ciclo 22→21: el
+  día 11 cae en el segundo mes del ciclo y el 25 en el primero. Si ese día no
+  existe (31 en febrero) usa el último del mes.
+- **`confirmar`** decide cómo llega. Con **`sí`** (el valor por defecto si la
+  dejás vacía) el cargo llega **eliminado**, con sus botones: corregís el monto
+  si cambió y lo sacás de eliminado. Con **`no`** entra directo y ya cuenta.
+- **`activo`** en `no` lo pausa sin borrar la fila.
+
+El valor por defecto de `confirmar` es `sí` a propósito: un monto que en
+realidad varía entrando solo ensucia los totales sin que nadie se entere, y eso
+es peor que un toque de más una vez al mes. Ponelo en `no` solo para los que son
+realmente fijos.
+
+Cada cargo se crea **una sola vez por ciclo**, el día que le toca. El bot puede
+correr mil veces al día sin duplicar nada.
+
 ### 🌙 Resumen nocturno automático
 Cada noche (por defecto a las **22:00**, hora `TIMEZONE`) el bot te manda el resumen.
 
