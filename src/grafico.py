@@ -75,6 +75,50 @@ def _formato_eje(maximo: int):
     return FuncFormatter(fmt)
 
 
+# Geometría del bloque de leyenda, en fracción del área de trazado. Vive acá
+# afuera porque la escala del eje Y la necesita: si cada uno estimara el alto por
+# su cuenta, se irían despegando y volvería el encimado.
+_LEY_TOPE, _LEY_DERECHA = 0.985, 0.653
+_LEY_PASO_HERO, _LEY_PASO = 0.120, 0.085
+
+
+def _alto_leyenda(n: int) -> float:
+    return _LEY_PASO_HERO + _LEY_PASO * (n - 1) + 0.035
+
+
+def _escala(series, x, dias_ciclo, proyeccion):
+    """(fondo, techo, tope) del eje Y. `tope` es el dato más alto, para el
+    formateador de los ticks.
+
+    El techo NO es un respiro fijo. La leyenda ocupa la esquina superior
+    izquierda del área de trazado, que es justo por donde sube la curva los
+    primeros días del ciclo: con un 14% fijo, al tercer día la curva quedaba
+    metida entre las letras. Acá se busca el techo mínimo que deja por debajo de
+    la leyenda a todo punto que le pase por abajo, y se toma el más exigente
+    entre eso y el respiro normal.
+
+    Se auto-calibra en los dos sentidos: cuando la curva avanza hacia la derecha
+    y deja de pasar bajo el bloque, la exigencia se afloja sola; y si se agrega
+    una serie, la leyenda crece y el techo sube con ella."""
+    vivas = [s for s in series if not s.get("sin_datos")] or series
+    tope = max([max(s["valores"]) for s in vivas] + [proyeccion or 0])
+    piso = min([min(s["valores"]) for s in vivas] + [0])
+    fondo = piso - (max(tope - piso, 1) * 0.035 if piso < 0 else 0)
+
+    techo = fondo + max(tope - fondo, 1) / 0.94        # respiro normal arriba
+
+    # Fracción del ancho en que cae cada día: el xlim va de 0.5 a dias + 0.5.
+    bajo = [v for s in vivas for xi, v in zip(x, s["valores"])
+            if (xi - 0.5) / dias_ciclo <= _LEY_DERECHA]
+    if proyeccion and (dias_ciclo - 0.5) / dias_ciclo <= _LEY_DERECHA:
+        bajo.append(proyeccion)
+
+    libre = _LEY_TOPE - _alto_leyenda(len(series)) - 0.035
+    if bajo and libre > 0 and max(bajo) > fondo:
+        techo = max(techo, fondo + (max(bajo) - fondo) / libre)
+    return fondo, techo, tope
+
+
 def _leyenda(ax, series, tema):
     """Bloque leyenda + montos arriba a la izquierda (la zona que las curvas
     acumuladas dejan libre siempre, porque arrancan abajo y suben a la derecha).
@@ -85,12 +129,12 @@ def _leyenda(ax, series, tema):
     # El gasto del ciclo en curso es LA cifra de la imagen: va en tamaño hero,
     # más grande incluso que el título. Los ciclos anteriores quedan como tabla
     # de comparación, chicos y parejos — la jerarquía la marca el tamaño.
-    PASO_HERO, PASO = 0.120, 0.085
-    alto = PASO_HERO + PASO * (len(series) - 1) + 0.035
+    PASO_HERO, PASO = _LEY_PASO_HERO, _LEY_PASO
+    alto = _alto_leyenda(len(series))
 
     # Respaldo en color de fondo, por si una curva sube antes de lo esperado.
     ax.add_patch(FancyBboxPatch(
-        (0.005, 0.985 - alto), 0.648, alto,
+        (0.005, _LEY_TOPE - alto), _LEY_DERECHA - 0.005, alto,
         boxstyle="round,pad=0.012,rounding_size=0.02",
         transform=ax.transAxes, facecolor=tema["fondo"], edgecolor="none",
         zorder=6, clip_on=False))
@@ -98,15 +142,29 @@ def _leyenda(ax, series, tema):
     y = 0.905
     for i, s in enumerate(series):
         principal = i == 0
+        vacia = bool(s.get("sin_datos"))
         ax.plot([0.03, 0.080], [y, y], transform=ax.transAxes,
-                color=tema["series"][i], linewidth=3.0 if principal else 1.9,
-                solid_capstyle="round", zorder=7, clip_on=False)
+                color=tema["apagado"] if vacia else tema["series"][i],
+                linewidth=3.0 if principal else 1.9,
+                linestyle=(0, (2, 2)) if vacia else "-",
+                solid_capstyle="butt" if vacia else "round",
+                zorder=7, clip_on=False)
         ax.text(0.100, y, s["etiqueta"], transform=ax.transAxes,
                 fontsize=11.5 if principal else 10.5,
-                color=tema["tinta"] if principal else tema["tinta2"],
+                color=tema["apagado"] if vacia
+                else (tema["tinta"] if principal else tema["tinta2"]),
                 va="center", ha="left", zorder=7)
         # Los tres montos comparten el borde derecho, lo más cerca del mes que
         # permita la cifra hero sin montarse encima de su etiqueta.
+        if s.get("sin_datos"):
+            # Aparece igual — el mes existió — pero se dice que no hay con qué
+            # compararlo. Un "$0" acá seria mentira: no es que no gastaste, es
+            # que el bot todavia no estaba mirando.
+            ax.text(0.518, y, "sin datos", transform=ax.transAxes,
+                    fontsize=10.5, color=tema["apagado"], style="italic",
+                    va="center", ha="right", zorder=7)
+            y -= PASO
+            continue
         ax.text(0.518, y, pesos(s["valores"][-1]), transform=ax.transAxes,
                 fontsize=17 if principal else 10.5,
                 color=tema["tinta"] if principal else tema["tinta2"],
@@ -265,6 +323,8 @@ def ritmo_de_gasto(series, dias_ciclo: int, subtitulo: str,
     # --- Series: el ciclo en curso manda por grosor y relleno, no por color ---
     for i, s in enumerate(series):
         principal = i == 0
+        if s.get("sin_datos"):
+            continue        # no hay curva que dibujar: solo figura en la leyenda
         ax.plot(x, s["valores"], color=t["series"][i],
                 linewidth=2.2 if principal else 1.6,
                 solid_capstyle="round", solid_joinstyle="round",
@@ -294,10 +354,15 @@ def ritmo_de_gasto(series, dias_ciclo: int, subtitulo: str,
             markeredgewidth=2, zorder=7)
 
     # --- Escalas ---
-    tope = max([max(s["valores"]) for s in series] + [proyeccion or 0])
-    piso = min([min(s["valores"]) for s in series] + [0])
-    respiro = max(tope - piso, 1) * 0.14
-    ax.set_ylim(piso - (respiro * 0.25 if piso < 0 else 0), tope + respiro)
+    # El techo NO es un respiro fijo. La leyenda ocupa la esquina superior
+    # izquierda del área de trazado, que es justo por donde sube la curva los
+    # primeros días del ciclo: con un 14% fijo, al tercer día la curva quedaba
+    # metida entre las letras. Se calcula el techo mínimo que deja todo punto
+    # que cae BAJO la leyenda por debajo de ella, y se toma el más exigente.
+    # Se auto-calibra: cuando la curva avanza hacia la derecha y ya no pasa por
+    # abajo del bloque, la exigencia se afloja sola.
+    fondo, techo, tope = _escala(series, x, dias_ciclo, proyeccion)
+    ax.set_ylim(fondo, techo)
     ax.set_xlim(0.5, dias_ciclo + 0.5)
     ax.yaxis.set_major_formatter(_formato_eje(tope))
     # Pocas líneas de grilla: sin esto, un ciclo recién empezado (rango chico)

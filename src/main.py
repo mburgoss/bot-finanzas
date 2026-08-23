@@ -742,19 +742,26 @@ def _grafico_ritmo(store, ciclos, dias_ciclo: int, transcurridos: int,
         dias = transcurridos + 1
         series = []
         for lbl, ini, corte, total in ciclos:
+            # Tres estados distintos, y confundirlos fue el error de antes:
+            #   * ciclo anterior al bot -> aparece, pero dice "sin datos";
+            #   * ciclo observado y sin un peso -> no aporta nada, se omite;
+            #   * ciclo con movimientos -> curva normal.
+            sin_datos = bool(series) and _antes_del_bot(store, ini)
             # Un ciclo anterior se omite solo si NO tuvo NINGÚN movimiento en todo
             # el ciclo — o sea, es anterior a que existiera el bot. Antes se
             # miraba el total RECORTADO y eso hacía desaparecer el mes pasado los
             # primeros días: con una ventana de un solo día, un ciclo con gastos
             # reales daba 0 y se caía del gráfico, dejando a la vista uno más
             # viejo que por casualidad sí había gastado ese día.
-            if series and not _hubo_movimientos(store, ini):
+            if series and not sin_datos and not _hubo_movimientos(store, ini):
                 continue
             series.append({
                 "etiqueta": _mes_corto(lbl),
-                "valores": grafico.acumular(store.gasto_diario(ini, corte), ini, dias),
+                "valores": [0] * dias if sin_datos else
+                           grafico.acumular(store.gasto_diario(ini, corte), ini, dias),
+                "sin_datos": sin_datos,
             })
-        if not any(s["valores"][-1] for s in series):
+        if not any(s["valores"][-1] for s in series if not s["sin_datos"]):
             return None     # todavía no hay nada que dibujar
         return grafico.ritmo_de_gasto(
             series, dias_ciclo,
@@ -764,6 +771,16 @@ def _grafico_ritmo(store, ciclos, dias_ciclo: int, transcurridos: int,
     except Exception as e:
         print(f"[aviso] no pude generar el gráfico del resumen: {e}")
         return None
+
+
+def _antes_del_bot(store, inicio_ciclo) -> bool:
+    """True si ese ciclo arrancó antes de que el bot estuviera mirando.
+
+    Se separa de _hubo_movimientos a propósito: los dos casos suman cero, pero
+    significan cosas distintas. Uno es "no gastaste" y el otro es "no sabemos",
+    y el gráfico los tiene que contar distinto."""
+    desde = store.observando_desde()
+    return bool(desde and inicio_ciclo < desde)
 
 
 def _hubo_movimientos(store, inicio_ciclo) -> bool:
@@ -778,8 +795,7 @@ def _hubo_movimientos(store, inicio_ciclo) -> bool:
 
     Lo que NO se mira es el total recortado a la altura de hoy: con una ventana
     de un día, un ciclo con gastos reales daba 0 y se caía del gráfico."""
-    desde = store.observando_desde()
-    if desde and inicio_ciclo < desde:
+    if _antes_del_bot(store, inicio_ciclo):
         return False
     fin = billing.proximo_inicio_de_ciclo(inicio_ciclo) - timedelta(days=1)
     return bool(store.gasto_neto_por_fecha(inicio_ciclo, fin)[0])
