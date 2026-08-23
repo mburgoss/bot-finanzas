@@ -804,10 +804,16 @@ class Store:
     def promedio_ciclos(self, inicio_actual: date, n: int = 3) -> int:
         """Promedio del gasto neto de los últimos `n` ciclos completos anteriores
         al actual (solo cuenta los ciclos con movimientos)."""
+        desde = self.observando_desde()
         totales, ini = [], inicio_actual
         for _ in range(n):
             fin = ini - timedelta(days=1)          # último día del ciclo anterior
             ini = billing.inicio_de_ciclo(fin)     # inicio de ese ciclo
+            # Un ciclo anterior a que el bot mirara tiene datos a medias, y
+            # promediarlo tira el promedio al piso: no es un mes barato, es un
+            # mes que casi no se registró.
+            if desde and ini < desde:
+                continue
             t, _cat = self.gasto_neto_por_fecha(ini, fin)
             if t:
                 totales.append(t)

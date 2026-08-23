@@ -142,16 +142,19 @@ def _leyenda(ax, series, tema):
     y = 0.905
     for i, s in enumerate(series):
         principal = i == 0
+        # Un ciclo sin datos conserva SU color: el color es la identidad de la
+        # serie y tiene que ser el mismo el mes que viene, cuando ya tenga
+        # curva. Lo que avisa que no hay dato es el punteado y el texto.
         vacia = bool(s.get("sin_datos"))
         ax.plot([0.03, 0.080], [y, y], transform=ax.transAxes,
-                color=tema["apagado"] if vacia else tema["series"][i],
+                color=tema["series"][i],
                 linewidth=3.0 if principal else 1.9,
                 linestyle=(0, (2, 2)) if vacia else "-",
                 solid_capstyle="butt" if vacia else "round",
                 zorder=7, clip_on=False)
         ax.text(0.100, y, s["etiqueta"], transform=ax.transAxes,
                 fontsize=11.5 if principal else 10.5,
-                color=tema["apagado"] if vacia
+                color=tema["tinta2"] if vacia
                 else (tema["tinta"] if principal else tema["tinta2"]),
                 va="center", ha="left", zorder=7)
         # Los tres montos comparten el borde derecho, lo más cerca del mes que

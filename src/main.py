@@ -783,6 +783,28 @@ def _antes_del_bot(store, inicio_ciclo) -> bool:
     return bool(desde and inicio_ciclo < desde)
 
 
+def _proyeccion(store, ini_act, total_act, transcurridos, dias_ciclo):
+    """Cierre estimado del ciclo, o None si todavía no hay nada que proyectar.
+
+    NO es la extrapolación cruda del ritmo. Multiplicar por 29/3 lo que se gastó
+    en tres días toma dos compras grandes del arranque y las convierte en un mes
+    imposible: el día 3 daba $611.059 contra un promedio real cerca de la mitad,
+    y de paso aplastaba las tres curvas contra el piso del gráfico.
+
+    Se mezcla el ritmo con el promedio de los ciclos anteriores, pesando por lo
+    que va corrido del ciclo: el día 1 manda casi todo el promedio, y al final
+    manda casi todo el ritmo, que para entonces ya es el dato real."""
+    if total_act <= 0 or transcurridos >= dias_ciclo - 1:
+        return None
+    dias = transcurridos + 1
+    ritmo = total_act * dias_ciclo // dias
+    promedio = store.promedio_ciclos(ini_act, n=3)
+    if not promedio:
+        return ritmo                       # sin historial, el ritmo es lo que hay
+    peso = dias / dias_ciclo
+    return int(ritmo * peso + promedio * (1 - peso))
+
+
 def _hubo_movimientos(store, inicio_ciclo) -> bool:
     """True si vale la pena dibujar ese ciclo en la comparación.
 
@@ -855,10 +877,7 @@ def _resumen_nocturno(store, hoy: date):
     total_ant2, _c2 = store.gasto_neto_por_fecha(ini_ant2, corte_ant2)
 
     promedio = store.promedio_ciclos(ini_act, n=3)
-    # Proyección de cierre: recién desde el 4º día. Con uno o dos días de datos
-    # el ×31 dispara la escala del gráfico y no dice nada del mes.
-    proyeccion = (total_act * dias_ciclo // (transcurridos + 1)
-                  if total_act > 0 and 3 <= transcurridos < dias_ciclo - 1 else None)
+    proyeccion = _proyeccion(store, ini_act, total_act, transcurridos, dias_ciclo)
 
     # La MISMA imagen del panel fijado, con tablas y dona: una sola función la
     # arma, así no pueden divergir.
@@ -910,7 +929,7 @@ def _resumen_nocturno(store, hoy: date):
         estado = ("<b>por encima</b> de tu promedio" if proyeccion > promedio
                   else "dentro de tu promedio")
         lineas.append("")
-        lineas.append(f"A este ritmo cerrás en <b>{_pesos(proyeccion)}</b>, "
+        lineas.append(f"Vas a cerrar cerca de <b>{_pesos(proyeccion)}</b>, "
                       f"{estado} de {_pesos(promedio)}.")
 
     # Colapsa líneas en blanco de más: cuando hay imagen se saltean bloques
@@ -1041,8 +1060,7 @@ def _imagen_del_ciclo(store, ciclos, dias_ciclo, transcurridos, n):
     totales = [store.gasto_neto_por_fecha(ini, corte)[0] for _lbl, ini, corte in ciclos]
     total_act = totales[0]
     cierre = billing.proximo_inicio_de_ciclo(ciclos[0][1]) - timedelta(days=1)
-    proyeccion = (total_act * dias_ciclo // (transcurridos + 1)
-                  if total_act > 0 and 3 <= transcurridos < dias_ciclo - 1 else None)
+    proyeccion = _proyeccion(store, ciclos[0][1], total_act, transcurridos, dias_ciclo)
     porciones = n["categorias"]
     torta = ({"total": sum(m for _c, m in porciones), "porciones": list(porciones)}
              if porciones else None)
