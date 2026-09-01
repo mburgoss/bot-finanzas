@@ -971,7 +971,13 @@ MAX_PORCIONES = 5       # top N categorías; el resto se junta en "Otras"
 
 def _numeros_del_ciclo(store, ciclos) -> dict:
     """Todos los números del ciclo en una pasada, para que la imagen y el texto
-    no puedan discrepar."""
+    no puedan discrepar.
+
+    Los dos totales cuentan el crédito en CUOTAS; lo que los separa es CUÁLES
+    cuotas. 'gastado' toma las de lo comprado en este ciclo (el ritmo del mes) y
+    'total_mes' toma todas las que se facturan, arrastre incluido (lo que te
+    cobran). El precio completo de las compras vive aparte, en 'comprado'.
+    """
     _lbl, ini_act, hoy = ciclos[0]
     g = store.desglose_de_gasto(ini_act, hoy)
     otros = g["debito"] + g["transferencia"] + g["ingreso"]   # ingreso ya es negativo
@@ -981,6 +987,7 @@ def _numeros_del_ciclo(store, ciclos) -> dict:
     return {"otros": otros, "credito": g["credito"], "ingresos": g["ingreso"],
             "gastado": g["credito"] + otros, "cuotas": cuotas,
             "total_mes": cuotas + otros, "deuda": deuda, "por_delante": por_delante,
+            "comprado": store.credito_comprado(ini_act, hoy),
             # Va en el dict para que entre también en la firma del panel: si
             # clasificás un movimiento, la dona cambia y hay que redibujar.
             "categorias": _porciones(store, ini_act, hoy)}
@@ -1009,7 +1016,7 @@ def _bloques_panel(n: dict, cierre=None):
 
     Las dos arrancan por la misma fila a propósito: es el término que ambos
     totales comparten, y ponerlo primero deja ver de una que lo único que cambia
-    entre ellos es cómo entra el crédito.
+    entre ellos es qué cuotas de crédito entran.
     Las etiquetas son cortas por una razón de ancho, no de estilo: con montos de
     siete dígitos, una etiqueta larga se monta encima del número. El matiz de que
     el débito va NETO de ingresos lo aclara el caption, justo cuando hay ingresos
@@ -1017,9 +1024,9 @@ def _bloques_panel(n: dict, cierre=None):
     """
     compartida = ("Débito y transf.", n["otros"], False)
     return [
-        ("Lo que compraste (el gráfico)", [
+        ("Lo que gastaste (el gráfico)", [
             compartida,
-            ("Crédito comprado", n["credito"], False),
+            ("Cuota del crédito", n["credito"], False),
             ("Gastado hasta hoy", n["gastado"], True),
         ]),
         # El corte real, no el día fijo viejo: el banco cierra cuando dice la
@@ -1037,8 +1044,9 @@ def _caption_panel(ahora, n: dict) -> str:
     """Texto del panel: SOLO lo que la imagen no muestra.
 
     El ciclo, el gastado y el total ya están dibujados arriba; repetirlos acá
-    era ruido. Queda la deuda —que no aparece en ninguna tabla porque es un
-    saldo, no un flujo del mes— y el sello de hora.
+    era ruido. Queda lo que mira hacia adelante —la deuda y el precio completo
+    de lo comprado, que las tablas ya no muestran porque cuentan cuotas— y el
+    sello de hora.
 
     La deuda va primera a propósito: la barra de "Mensaje fijado" arriba del
     chat muestra la primera línea del caption, así que ese es el número que se
@@ -1048,6 +1056,11 @@ def _caption_panel(ahora, n: dict) -> str:
         plural = "ciclo" if n["por_delante"] == 1 else "ciclos"
         lineas.append(f"Deuda total tarjeta: <b>{_pesos(n['deuda'])}</b> "
                       f"({n['por_delante']} {plural} por delante)")
+    if n["comprado"]:
+        # El precio de lista de lo comprado en el ciclo. Sin esta línea, una
+        # compra grande en 12 cuotas casi no se nota en el panel.
+        lineas.append(f"Compraste con crédito: <b>{_pesos(n['comprado'])}</b> "
+                      f"(precio completo, se reparte en cuotas)")
     lineas.append(f"<i>Actualizado {ahora.strftime('%d/%m %H:%M')}</i>")
     return "\n".join(lineas)
 

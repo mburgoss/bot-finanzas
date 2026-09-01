@@ -102,7 +102,8 @@ de Telegram **se envuelve en pantallas angostas** —en un iPhone parte cada fil
 dos y la tabla deja de leerse como tabla—. Dentro de la imagen el ancho lo fijamos
 nosotros, así que las columnas aguantan en cualquier teléfono.
 
-El caption **solo lleva lo que la imagen no muestra**: la deuda total y el sello de
+El caption **solo lleva lo que la imagen no muestra**: lo que mira hacia adelante
+—la deuda total y el precio completo de lo comprado con crédito— y el sello de
 hora. Repetir ahí el ciclo, el gastado y el total era ruido.
 
 La deuda va primera a propósito: **la barra de "Mensaje fijado" arriba del chat
@@ -111,26 +112,38 @@ nada — y es justamente el que no aparece en ninguna tabla, porque es un saldo 
 un flujo del mes.
 
 ```
-LO QUE COMPRASTE  (el gráfico)          LO QUE TE COBRAN EL 22
+LO QUE GASTASTE  (el gráfico)           LO QUE TE COBRAN EL 22
 Débito + transf − ingresos   $251.794   Débito + transf − ingresos  $251.794
-Crédito comprado (completo)  $191.988   Cuotas que facturan el 22   $651.467
-= Gastado hasta hoy          $443.782   = Total mes                 $903.261
+Cuota del crédito             $95.994   Cuotas del ciclo            $651.467
+= Gastado hasta hoy          $347.788   = Total mes                 $903.261
         └── la misma primera fila en los dos bloques ──┘
 ```
 
 Las dos tablas **arrancan con la misma fila a propósito**. Ese es el término que
 los dos totales comparten, y ponerlo primero deja ver de una que **lo único que
-cambia entre ellos es cómo entra el crédito**.
+cambia entre ellos es qué cuotas de crédito entran**.
+
+**Las dos cuentan el crédito en cuotas, no a precio de lista.** Una compra de
+$600.000 en 6 cuotas pesa $100.000, que es lo que esa compra te suma al mes — por
+eso marcar las cuotas en los botones **baja el gasto del mes en el acto**. Antes la
+columna izquierda contaba el precio completo el día de la compra, y marcar 6 cuotas
+no movía ese número.
+
+Lo que separa a las dos columnas es **cuáles** cuotas entran:
+
+- a la izquierda, las de lo que compraste **en este ciclo**: es el ritmo del mes, y
+  es lo que dibuja la curva;
+- a la derecha, **todas las que se facturan** en el ciclo, incluidas las que
+  arrastrás de compras de meses anteriores. Por eso el total de la derecha es mayor.
 
 Los porcentajes contra los meses anteriores y la proyección de cierre **no van en
 el texto**: ya están dibujados en la imagen.
 
-Las dos usan **la misma ventana de fechas** (del 22 al 21). La única diferencia es
-el crédito: a la izquierda va el **monto completo** el día de la compra (lo que
-decidiste gastar), a la derecha va la **cuota** que cae en este ciclo (lo que te
-descuentan, e incluye compras de meses anteriores). Por eso los dos totales no
-coinciden, y por eso el bloque del medio aparece en los dos lados: es el término
-que comparten, y verlo repetido deja cuadrar la cuenta a ojo.
+Las dos usan **la misma ventana de fechas** (del 22 al 21).
+
+El **precio completo** de lo comprado con crédito no se pierde: va en el caption
+(«Compraste con crédito: $690.000»). Es la otra pregunta —*cuánto me comprometí*—
+y sin esa línea una compra grande en 12 cuotas casi no se notaría en el panel.
 
 La **deuda total tarjeta** es la suma de todas las cuotas todavía no facturadas
 —de este ciclo y de los que vienen—. Es un saldo, no un flujo del mes: no se puede
@@ -184,7 +197,9 @@ Se apaga con `PANEL_ACTIVO=0`.
 > una web — hoy no.
 
 Al pie va una **dona con la estructura de gasto por categoría** y el total gastado
-en el centro. Se muestran las 5 categorías más grandes y el resto se junta en
+en el centro. Reparte por **cuota**, igual que la curva: es el desglose del «Gastado
+hasta hoy», no el de la hoja `Categorías` (esa arrastra cuotas de meses anteriores).
+Se muestran las 5 categorías más grandes y el resto se junta en
 "Otras": pasados unos seis sectores, los más chicos dejan de distinguirse. Los seis
 colores están validados para daltonismo (peor par vecino: ΔE 9,1 en protanopía).
 
@@ -284,8 +299,9 @@ El texto solo lleva lo que la imagen **no** dice:
 
 Cada dato aparece una sola vez.
 
-El ritmo se mide por **fecha de compra** (monto completo el día que compraste), para poder
-comparar ciclos día a día. Se envía una sola vez por día. La hora se ajusta con el secret
+El ritmo se mide por **fecha de compra**, contando cada compra a crédito por su
+**cuota** (no por el precio de lista), para poder comparar ciclos día a día. Se envía
+una sola vez por día. La hora se ajusta con el secret
 opcional `RESUMEN_HORA` (0–23) y el tema del gráfico con `GRAFICO_TEMA`
 (`claro` u `oscuro`; se define en el propio workflow, no es un secret).
 

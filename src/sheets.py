@@ -739,11 +739,25 @@ class Store:
                 data[clave] = data.get(clave, 0) + (-monto if tipo == "ingreso" else monto)
         return data
 
-    # --- Ritmo de gasto (por fecha de compra, para el resumen nocturno) ---
+    # --- Ritmo de gasto (por fecha de compra, para el panel y el resumen) ---
     def _netos_en(self, desde: date, hasta: date):
         """Itera (fecha, neto, categoría, tipo) de los movimientos vigentes cuya
-        FECHA cae en [desde, hasta]. Cuenta el monto completo en la fecha: los
-        gastos suman y los ingresos restan."""
+        FECHA cae en [desde, hasta].
+
+        El crédito entra por su CUOTA, no por el precio completo: una compra de
+        $600.000 en 6 cuotas pesa $100.000: es lo que esa compra te suma al mes.
+        Contarla entera era lo que hacía que marcar 6 cuotas no moviera el número
+        del gasto, cuando es justo lo que uno espera que lo mueva.
+
+        Lo que NO entra son las cuotas arrastradas de compras de ciclos
+        anteriores: esas ya las muestra «Cuotas del ciclo» en la otra columna del
+        panel, y sumarlas también acá sería contarlas dos veces. Este número
+        responde "cuánto me costó lo que compré en este ciclo"; el otro responde
+        "cuánto me cobran el día de facturación".
+
+        Gastos suman, ingresos restan.
+        """
+        ciclo = billing.ciclo_de_compra(desde)
         for reg in self._registros():
             if str(reg.get("estado") or "").lower() == "anulado":
                 continue
@@ -753,8 +767,23 @@ class Store:
             f = _fecha(reg.get("fecha"))
             if not (desde <= f <= hasta):
                 continue
-            neto = -abs(_num(reg.get("monto"))) if tipo == "ingreso" else abs(_num(reg.get("monto")))
             cat = str(reg.get("categoria") or "").strip() or config.SIN_CATEGORIA
+            if tipo == "credito":
+                # La cuota se busca por ciclo en vez de dividir a mano: así el
+                # resto de la división cae donde cae en los totales (en la última
+                # cuota) y una compra que recién factura el ciclo que viene pesa
+                # cero acá, en vez de adelantarle una cuota que todavía no va.
+                ciclo0 = _ciclo(reg.get("ciclo_inicio")) or billing.ciclo_de_compra(f)
+                n = _num(reg.get("num_cuotas") or 1)
+                neto = next((c["monto"] for c in
+                             billing.cuotas_por_ciclo(ciclo0, abs(_num(reg.get("monto"))), n)
+                             if c["ciclo"] == ciclo), 0)
+                if not neto:
+                    continue
+            elif tipo == "ingreso":
+                neto = -abs(_num(reg.get("monto")))
+            else:
+                neto = abs(_num(reg.get("monto")))
             yield f, neto, cat, tipo
 
     def gasto_neto_por_fecha(self, desde: date, hasta: date) -> tuple[int, dict]:
@@ -780,16 +809,32 @@ class Store:
         cuadrarlo contra el 'Total del mes'.
 
         Devuelve {'credito', 'debito', 'transferencia', 'ingreso'} donde crédito
-        va a monto COMPLETO el día de la compra (no repartido en cuotas) e
-        ingreso viene NEGATIVO. La suma de los cuatro es el 'Gastado'.
+        es la CUOTA de las compras del período (no el precio completo) e ingreso
+        viene NEGATIVO. La suma de los cuatro es el 'Gastado'.
 
-        Ojo con la diferencia clave: acá 'credito' es lo que COMPRASTE en el
-        período; en calcular_totales() es la CUOTA que se factura en el ciclo,
-        que incluye compras de meses anteriores."""
+        Ojo con la diferencia clave: acá 'credito' es lo que te suma al mes lo
+        que compraste EN ESTE ciclo; en calcular_totales() son TODAS las cuotas
+        que se facturan en el ciclo, incluidas las de compras de meses anteriores.
+        Por eso el 'Total del mes' es mayor: arrastra."""
         partes = {"credito": 0, "debito": 0, "transferencia": 0, "ingreso": 0}
         for _f, neto, _cat, tipo in self._netos_en(desde, hasta):
             partes[tipo] = partes.get(tipo, 0) + neto
         return partes
+
+    def credito_comprado(self, desde: date, hasta: date) -> int:
+        """Precio COMPLETO de lo comprado con crédito en el período.
+
+        No es lo que muestra la curva —esa cuenta cuotas— pero sigue siendo el
+        dato de "cuánto me comprometí este ciclo", que si no no lo dice nadie."""
+        total = 0
+        for reg in self._registros():
+            if str(reg.get("estado") or "").lower() == "anulado":
+                continue
+            if reg.get("tipo") != "credito":
+                continue
+            if desde <= _fecha(reg.get("fecha")) <= hasta:
+                total += abs(_num(reg.get("monto")))
+        return total
 
     def deuda_de_tarjeta(self, ciclo_actual: str) -> tuple[int, int]:
         """Cuotas de crédito todavía no facturadas: la de este ciclo y todas las
